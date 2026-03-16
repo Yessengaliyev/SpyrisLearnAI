@@ -1,0 +1,8 @@
+{
+  "name": "SpyrisLearn",
+  "description": "A powerful AI study assistant with authentication, specialized departments for marks analysis and warm-up tasks, and photo-to-conspect capabilities.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
