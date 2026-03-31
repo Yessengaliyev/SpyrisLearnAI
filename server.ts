@@ -42,13 +42,48 @@ async function startServer() {
   app.use(cookieParser());
   app.use(cors());
 
+  // Mock OTP Store
+  const otps = new Map<string, string>();
+  const verifiedEmails = new Set<string>();
+
   // Auth Routes
+  app.post("/api/auth/send-code", (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email or phone is required" });
+    
+    // Generate a 6-digit code
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    otps.set(email, code);
+    
+    // In a production app, you would use Twilio or SendGrid here.
+    // For this demo, we return the code so the frontend can display it to the user.
+    res.json({ success: true, message: "Code sent successfully", mockCode: code });
+  });
+
+  app.post("/api/auth/verify-code", (req, res) => {
+    const { email, code } = req.body;
+    if (otps.get(email) === code) {
+      otps.delete(email);
+      verifiedEmails.add(email);
+      res.json({ success: true });
+    } else {
+      res.status(400).json({ error: "Invalid verification code" });
+    }
+  });
+
   app.post("/api/auth/signup", async (req, res) => {
     const { email, password, name } = req.body;
+    
+    if (!verifiedEmails.has(email)) {
+      return res.status(400).json({ error: "Email not verified. Please verify your email first." });
+    }
+
     try {
       const hashedPassword = await bcrypt.hash(password, 10);
       const id = crypto.randomUUID();
       db.prepare("INSERT INTO users (id, email, password, name) VALUES (?, ?, ?, ?)").run(id, email, hashedPassword, name);
+      
+      verifiedEmails.delete(email); // Clean up after signup
       
       const token = jwt.sign({ id, email }, JWT_SECRET, { expiresIn: "7d" });
       res.cookie("token", token, { httpOnly: true, secure: true, sameSite: "none" });

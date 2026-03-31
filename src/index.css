@@ -193,3 +193,54 @@ body.glass .glass-panel, body.glass .bg-surge-card {
   -webkit-backdrop-filter: blur(40px) saturate(150%);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
+
+/* New Themes */
+body.neon {
+  --color-surge-bg: #000000;
+  --color-surge-card: rgba(0, 255, 255, 0.05);
+  --color-surge-ink: #ffffff;
+  --color-surge-purple: #00ffff; /* Cyan */
+  --color-surge-purple-dark: #00cccc;
+  --color-surge-border: rgba(0, 255, 255, 0.2);
+  background-image: radial-gradient(circle at 50% 50%, rgba(0, 255, 255, 0.1) 0%, transparent 60%);
+}
+
+body.gold {
+  --color-surge-bg: #111111;
+  --color-surge-card: rgba(255, 215, 0, 0.05);
+  --color-surge-ink: #ffffff;
+  --color-surge-purple: #ffd700; /* Gold */
+  --color-surge-purple-dark: #ccac00;
+  --color-surge-border: rgba(255, 215, 0, 0.2);
+  background-image: radial-gradient(circle at 50% 50%, rgba(255, 215, 0, 0.1) 0%, transparent 60%);
+}
+
+body.silver {
+  --color-surge-bg: #1a1a1a;
+  --color-surge-card: rgba(192, 192, 192, 0.05);
+  --color-surge-ink: #ffffff;
+  --color-surge-purple: #c0c0c0; /* Silver */
+  --color-surge-purple-dark: #999999;
+  --color-surge-border: rgba(192, 192, 192, 0.2);
+  background-image: radial-gradient(circle at 50% 50%, rgba(192, 192, 192, 0.1) 0%, transparent 60%);
+}
+
+body.ocean {
+  --color-surge-bg: #001f3f;
+  --color-surge-card: rgba(0, 116, 217, 0.05);
+  --color-surge-ink: #ffffff;
+  --color-surge-purple: #0074d9; /* Blue */
+  --color-surge-purple-dark: #005bb5;
+  --color-surge-border: rgba(0, 116, 217, 0.2);
+  background-image: radial-gradient(circle at 50% 50%, rgba(0, 116, 217, 0.15) 0%, transparent 60%);
+}
+
+body.diamond {
+  --color-surge-bg: #f0f8ff;
+  --color-surge-card: rgba(185, 242, 255, 0.2);
+  --color-surge-ink: #000000;
+  --color-surge-purple: #00bfff; /* Deep Sky Blue */
+  --color-surge-purple-dark: #0099cc;
+  --color-surge-border: rgba(0, 191, 255, 0.3);
+  background-image: radial-gradient(circle at 50% 50%, rgba(0, 191, 255, 0.1) 0%, transparent 60%);
+}

@@ -1,9 +1,13 @@
-export type Department = 'General' | 'Marks' | 'Flashcards' | 'Quizzes' | 'Plan' | 'Test' | 'Voice' | 'Translator' | 'Timer' | 'Experience' | 'Projects';
+export type Department = 'General' | 'Marks' | 'Flashcards' | 'Quizzes' | 'Plan' | 'Test' | 'Voice' | 'Translator' | 'Timer' | 'Experience' | 'SmartVideos' | 'Projects';
 
 export interface User {
-  id: string;
+  uid: string;
   email: string;
   name: string;
+  xp: number;
+  level: number;
+  rank: string;
+  badges: string[];
 }
 
 export interface Flashcard {
