@@ -33,8 +33,6 @@ export async function chatWithSpyris(message: string, history: { role: string; p
       systemInstruction += " You are currently in the 'Translator' department. Your goal is to translate text between any languages requested by the user, or draft messages based on the user's topic, tone, and length preferences. Provide accurate and context-aware translations or well-written drafts.";
     } else if (department === 'SmartVideos') {
       systemInstruction += " You are currently in the 'Smart Videos' department. Your goal is to find and suggest the best educational YouTube videos for a specific class level and topic. Provide direct YouTube links and a brief explanation of why each video is helpful.";
-    } else if (department === 'Voice') {
-      systemInstruction += " You are currently in the 'Voice' department. You are having a real-time voice conversation with the student. Be helpful, concise, and engaging.";
     }
 
     const response = await ai.models.generateContent({
@@ -93,8 +91,6 @@ export async function chatWithSpyrisStream(
       systemInstruction += " You are currently in the 'Translator' department. Your goal is to translate text between any languages requested by the user, or draft messages based on the user's topic, tone, and length preferences. Provide accurate and context-aware translations or well-written drafts.";
     } else if (department === 'SmartVideos') {
       systemInstruction += " You are currently in the 'Smart Videos' department. Your goal is to find and suggest the best educational YouTube videos for a specific class level and topic. Provide direct YouTube links and a brief explanation of why each video is helpful.";
-    } else if (department === 'Voice') {
-      systemInstruction += " You are currently in the 'Voice' department. You are having a real-time voice conversation with the student. Be helpful, concise, and engaging.";
     }
 
     const parts: any[] = [];
@@ -461,23 +457,4 @@ export async function textToSpeech(text: string, voiceName: 'Puck' | 'Charon' | 
     console.error("Error in textToSpeech:", error);
     throw error;
   }
-}
-
-export function connectLive(callbacks: {
-  onopen?: () => void;
-  onmessage: (message: any) => void;
-  onerror?: (error: any) => void;
-  onclose?: () => void;
-}, systemInstruction?: string) {
-  return ai.live.connect({
-    model: liveModel,
-    callbacks,
-    config: {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
-      },
-      systemInstruction: systemInstruction || "You are Spyris, a helpful AI study assistant. You are having a real-time voice conversation.",
-    },
-  });
 }

@@ -78,7 +78,9 @@ export const updateXP = async (uid: string, xpToAdd: number) => {
 
 // Projects Helpers
 export const createProject = async (uid: string, title: string, deadline: string) => {
-  const docRef = await addDoc(collection(db, 'projects'), {
+  const docRef = doc(collection(db, 'projects'));
+  await setDoc(docRef, {
+    id: docRef.id,
     uid,
     title,
     deadline,
@@ -104,7 +106,9 @@ export const updateMark = async (uid: string, subject: string, value: number) =>
   const q = query(collection(db, 'marks'), where('uid', '==', uid), where('subject', '==', subject));
   const snap = await getDocs(q);
   if (snap.empty) {
-    await addDoc(collection(db, 'marks'), {
+    const docRef = doc(collection(db, 'marks'));
+    await setDoc(docRef, {
+      id: docRef.id,
       uid,
       subject,
       value,

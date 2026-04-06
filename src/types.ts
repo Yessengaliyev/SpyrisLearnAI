@@ -31,6 +31,7 @@ export interface Message {
   image?: string; // single base64 image
   flashcards?: Flashcard[];
   quiz?: QuizQuestion[];
+  groundingChunks?: any[];
 }
 
 export interface ChatSession {

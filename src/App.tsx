@@ -57,6 +57,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import remarkMath from 'remark-math';
+import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { cn, formatTime } from './utils';
@@ -86,7 +87,7 @@ import {
   updateMark
 } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, setDoc } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, addDoc, serverTimestamp, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 
 declare global {
   interface Window {
@@ -201,12 +202,19 @@ function AppContent() {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isAuthReady, setIsAuthReady] = useState(false);
 
+  const [isThinkingMode, setIsThinkingMode] = useState(false);
+
   // Live API States
   const [liveSession, setLiveSession] = useState<any>(null);
   const [isLiveActive, setIsLiveActive] = useState(false);
   const [liveTranscription, setLiveTranscription] = useState("");
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
-  const [isThinkingMode, setIsThinkingMode] = useState(false);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const playbackTimeRef = useRef<number>(0);
+
+  // STT States
+  const [isVoiceTyping, setIsVoiceTyping] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [signupStep, setSignupStep] = useState<'contact' | 'verify' | 'create'>('contact');
@@ -262,6 +270,9 @@ function AppContent() {
             profile = await createUserProfile(firebaseUser);
           }
           setUser(profile as User);
+          setXp(profile.xp || 0);
+          setLevel(profile.level || 1);
+          setAchievements(profile.badges || []);
         } else {
           setUser(null);
         }
@@ -291,23 +302,7 @@ function AppContent() {
     return () => unsubscribe();
   }, [user]);
 
-  // Firestore Messages Listener
-  const [messages, setMessages] = useState<Message[]>([]);
-  useEffect(() => {
-    if (!currentSessionId) {
-      setMessages([]);
-      return;
-    }
-    const q = query(
-      collection(db, 'sessions', currentSessionId, 'messages'),
-      orderBy('timestamp', 'asc')
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const messageList = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Message));
-      setMessages(messageList);
-    });
-    return () => unsubscribe();
-  }, [currentSessionId]);
+
 
   useEffect(() => {
     document.body.className = '';
@@ -335,6 +330,7 @@ function AppContent() {
   const [isPlanning, setIsPlanning] = useState(false);
   const [testData, setTestData] = useState({ subject: 'Algebra', topic: '', difficulty: 'Medium' });
   const [marksAnalysisResult, setMarksAnalysisResult] = useState<string | null>(null);
+  const [marksDescription, setMarksDescription] = useState('');
   const [isAnalyzingMarks, setIsAnalyzingMarks] = useState(false);
   const [translatorData, setTranslatorData] = useState({ text: '', sourceLang: 'Russian', targetLang: 'English' });
   const [translatorMode, setTranslatorMode] = useState<'translate' | 'writer'>('translate');
@@ -415,6 +411,12 @@ function AppContent() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Gemini API has a strict 50MB limit for inline data. We limit to 20MB to be safe.
+    if (file.size > 20 * 1024 * 1024) {
+      showToast("Файл слишком большой. Максимальный размер - 20 МБ.", "error");
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const base64Data = event.target?.result as string;
@@ -443,30 +445,15 @@ function AppContent() {
   };
 
   const syncAchievements = async (newAchievements: string[]) => {
+    if (!user) return;
     try {
-      await fetch("/api/achievements", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ achievements: newAchievements })
-      });
+      await updateDoc(doc(db, 'users', user.uid), { badges: newAchievements });
     } catch (e) {
       console.error("Failed to sync achievements", e);
     }
   };
 
-  const syncExperience = async (newXp: number, newLevel: number) => {
-    try {
-      await fetch("/api/experience", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ xp: newXp, level: newLevel })
-      });
-    } catch (e) {
-      console.error("Failed to sync experience", e);
-    }
-  };
-
-  const addXp = (amount: number) => {
+  const addXp = async (amount: number) => {
     const newXp = xp + amount;
     const newLevel = Math.floor(newXp / 100) + 1;
     setXp(newXp);
@@ -475,7 +462,13 @@ function AppContent() {
       if (newLevel === 5) checkAndAwardAchievement('LEVEL_5');
       if (newLevel === 10) checkAndAwardAchievement('LEVEL_10');
     }
-    syncExperience(newXp, newLevel);
+    if (user) {
+      try {
+        await updateXP(user.uid, amount);
+      } catch (e) {
+        console.error("Failed to sync experience", e);
+      }
+    }
   };
 
   // Timer Effect
@@ -511,183 +504,6 @@ function AppContent() {
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [linkInput, setLinkInput] = useState('');
 
-  // Voice Chat States
-  const [isVoiceActive, setIsVoiceActive] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState<'idle' | 'connecting' | 'active' | 'error'>('idle');
-  const [voiceName, setVoiceName] = useState('Zephyr');
-  const voiceSessionRef = useRef<any>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const audioQueueRef = useRef<Int16Array[]>([]);
-  const isPlayingRef = useRef(false);
-
-  const startVoiceChat = async () => {
-    try {
-      setVoiceStatus('connecting');
-      setIsVoiceActive(true);
-
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const session = await ai.live.connect({
-        model: "gemini-3.1-flash-live-preview",
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } },
-          },
-          systemInstruction: "You are Spyris, a helpful and friendly study assistant. You are multilingual and can speak and understand any language requested by the user, including Kazakh, Russian, English, and others. Always respond in the language the user is speaking to you in. You are having a real-time voice conversation with a student. Keep your responses concise and engaging.",
-        },
-        callbacks: {
-          onopen: () => {
-            console.log("Voice Chat: Connection opened");
-            setVoiceStatus('active');
-            setupAudioInput();
-          },
-          onmessage: async (message) => {
-            console.log("Voice Chat: Message received", message);
-            if (message.serverContent?.modelTurn?.parts) {
-              for (const part of message.serverContent.modelTurn.parts) {
-                if (part.inlineData?.data) {
-                  const base64Audio = part.inlineData.data;
-                  const binaryString = atob(base64Audio);
-                  const bytes = new Uint8Array(binaryString.length);
-                  for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
-                  }
-                  const pcmData = new Int16Array(bytes.buffer);
-                  audioQueueRef.current.push(pcmData);
-                  if (!isPlayingRef.current) {
-                    playNextInQueue();
-                  }
-                }
-              }
-            }
-            if (message.serverContent?.interrupted) {
-              console.log("Voice Chat: Interrupted");
-              audioQueueRef.current = [];
-              isPlayingRef.current = false;
-            }
-          },
-          onclose: () => {
-            console.log("Voice Chat: Connection closed");
-            stopVoiceChat();
-          },
-          onerror: (err) => {
-            console.error("Voice Chat Error:", err);
-            setVoiceStatus('error');
-            stopVoiceChat();
-          }
-        }
-      });
-      voiceSessionRef.current = session;
-    } catch (err) {
-      console.error("Failed to start voice chat:", err);
-      setVoiceStatus('error');
-      setIsVoiceActive(false);
-    }
-  };
-
-  const setupAudioInput = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-      const source = audioContextRef.current.createMediaStreamSource(stream);
-      processorRef.current = audioContextRef.current.createScriptProcessor(4096, 1, 1);
-
-      processorRef.current.onaudioprocess = (e) => {
-        const inputData = e.inputBuffer.getChannelData(0);
-        const pcmData = new Int16Array(inputData.length);
-        for (let i = 0; i < inputData.length; i++) {
-          pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
-        }
-        const base64Data = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
-        voiceSessionRef.current?.sendRealtimeInput({
-          audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' }
-        });
-      };
-
-      source.connect(processorRef.current);
-      processorRef.current.connect(audioContextRef.current.destination);
-    } catch (err) {
-      console.error("Microphone access denied:", err);
-      setVoiceStatus('error');
-    }
-  };
-
-  const playVoicePreview = async (voice: string) => {
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `Привет, я Спирис! Я готов помочь тебе с учебой.` }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } },
-          },
-        },
-      });
-
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (base64Audio) {
-        const binaryString = atob(base64Audio);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        const pcmData = new Int16Array(bytes.buffer);
-        
-        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-        const floatData = new Float32Array(pcmData.length);
-        for (let i = 0; i < pcmData.length; i++) {
-          floatData[i] = pcmData[i] / 0x7FFF;
-        }
-        const buffer = ctx.createBuffer(1, floatData.length, 24000);
-        buffer.getChannelData(0).set(floatData);
-        const source = ctx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(ctx.destination);
-        source.start();
-      }
-    } catch (err) {
-      console.error("Voice preview failed:", err);
-    }
-  };
-
-  const playNextInQueue = async () => {
-    if (audioQueueRef.current.length === 0 || !audioContextRef.current) {
-      isPlayingRef.current = false;
-      return;
-    }
-
-    isPlayingRef.current = true;
-    const pcmData = audioQueueRef.current.shift()!;
-    const floatData = new Float32Array(pcmData.length);
-    for (let i = 0; i < pcmData.length; i++) {
-      floatData[i] = pcmData[i] / 0x7FFF;
-    }
-
-    const buffer = audioContextRef.current.createBuffer(1, floatData.length, 24000);
-    buffer.getChannelData(0).set(floatData);
-    const source = audioContextRef.current.createBufferSource();
-    source.buffer = buffer;
-    source.connect(audioContextRef.current.destination);
-    source.onended = () => playNextInQueue();
-    source.start();
-  };
-
-  const stopVoiceChat = () => {
-    voiceSessionRef.current?.close();
-    voiceSessionRef.current = null;
-    processorRef.current?.disconnect();
-    processorRef.current = null;
-    audioContextRef.current?.close();
-    audioContextRef.current = null;
-    setIsVoiceActive(false);
-    setVoiceStatus('idle');
-    audioQueueRef.current = [];
-    isPlayingRef.current = false;
-  };
-
   // Subscription States
   const [showSubscription, setShowSubscription] = useState(false);
   const [paymentStep, setPaymentStep] = useState<'plan' | 'checkout'>('plan');
@@ -701,25 +517,35 @@ function AppContent() {
     // Relying on onAuthStateChanged for Firebase Auth
   }, []);
 
-  const fetchSessions = async () => {
+  const syncSessions = async (updatedSessions: ChatSession[], sessionIdToSync: string) => {
+    if (!user) return;
     try {
-      const res = await fetch("/api/sessions");
-      const data = await res.json();
-      if (data.sessions) {
-        setSessions(data.sessions);
-        if (data.sessions.length > 0) {
-          setCurrentSessionId(data.sessions[0].id);
-        }
-      }
-    } catch (e) {
-      console.error("Failed to fetch sessions", e);
-    }
-  };
+      const sessionToSync = updatedSessions.find(s => s.id === sessionIdToSync);
+      if (!sessionToSync) return;
 
-  const syncSessions = async (updatedSessions: ChatSession[]) => {
-    // This is now handled by Firestore real-time listeners
-    // We keep it as a no-op to avoid breaking existing code for now
-    console.log("syncSessions called (no-op with Firestore)");
+      await setDoc(doc(db, 'sessions', sessionToSync.id), {
+        id: sessionToSync.id,
+        uid: user.uid,
+        title: sessionToSync.title,
+        department: sessionToSync.department,
+        lastUpdated: Date.now(),
+        createdAt: sessionToSync.createdAt,
+        isArchived: sessionToSync.isArchived,
+        type: sessionToSync.type,
+        messages: sessionToSync.messages
+      }, { merge: true });
+    } catch (error) {
+      console.error("Error syncing session:", error);
+      throw new Error(JSON.stringify({
+        error: error instanceof Error ? error.message : String(error),
+        operationType: 'write',
+        path: 'sessions/' + sessionIdToSync,
+        authInfo: {
+          userId: user.uid,
+          email: user.email
+        }
+      }));
+    }
   };
 
   // Experience States
@@ -849,33 +675,104 @@ function AppContent() {
 
   const startLiveSession = async () => {
     try {
-      const { connectLive } = await import('./services/geminiService');
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const { GoogleGenAI, Modality } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY });
+      
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       setAudioContext(ctx);
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
+      });
       const source = ctx.createMediaStreamSource(stream);
+      const processor = ctx.createScriptProcessor(4096, 1, 1);
+      processorRef.current = processor;
       
-      const session = await connectLive({
-        onopen: () => {
-          setIsLiveActive(true);
-          console.log("Live session opened");
+      const sessionPromise = ai.live.connect({
+        model: "gemini-3.1-flash-live-preview",
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: "Zephyr" } },
+          },
+          systemInstruction: "Ты Spyris, спокойный и дружелюбный голосовой помощник для учебы. Отвечай кратко, по делу и поддерживай студента. Общайся на том языке, на котором к тебе обращаются.",
         },
-        onmessage: (message) => {
-          if (message.serverContent?.modelTurn?.parts?.[0]?.text) {
-            setLiveTranscription(prev => prev + " " + message.serverContent.modelTurn.parts[0].text);
-          }
-        },
-        onerror: (e) => console.error("Live error:", e),
-        onclose: () => {
-          setIsLiveActive(false);
-          setLiveSession(null);
+        callbacks: {
+          onopen: () => {
+            setIsLiveActive(true);
+            setLiveTranscription("");
+            
+            processor.onaudioprocess = (e) => {
+              const inputData = e.inputBuffer.getChannelData(0);
+              const pcmData = new Int16Array(inputData.length);
+              for (let i = 0; i < inputData.length; i++) {
+                pcmData[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
+              }
+              
+              // Silence the output buffer to prevent echo
+              const outputData = e.outputBuffer.getChannelData(0);
+              for (let i = 0; i < outputData.length; i++) {
+                outputData[i] = 0;
+              }
+
+              const base64Data = btoa(String.fromCharCode(...new Uint8Array(pcmData.buffer)));
+              sessionPromise.then(session => {
+                session.sendRealtimeInput({
+                  audio: { data: base64Data, mimeType: 'audio/pcm;rate=16000' }
+                });
+              });
+            };
+            source.connect(processor);
+            processor.connect(ctx.destination);
+          },
+          onmessage: (message) => {
+            if (message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data) {
+              const base64Audio = message.serverContent.modelTurn.parts[0].inlineData.data;
+              const binaryString = atob(base64Audio);
+              const bytes = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+              }
+              const pcmData = new Int16Array(bytes.buffer);
+              const floatData = new Float32Array(pcmData.length);
+              for (let i = 0; i < pcmData.length; i++) {
+                floatData[i] = pcmData[i] / 0x7FFF;
+              }
+              const buffer = ctx.createBuffer(1, floatData.length, 16000);
+              buffer.getChannelData(0).set(floatData);
+              const playSource = ctx.createBufferSource();
+              playSource.buffer = buffer;
+              playSource.connect(ctx.destination);
+              
+              // Schedule playback to prevent overlapping audio
+              const startTime = Math.max(playbackTimeRef.current, ctx.currentTime);
+              playSource.start(startTime);
+              playbackTimeRef.current = startTime + buffer.duration;
+            }
+            if (message.serverContent?.interrupted) {
+              playbackTimeRef.current = ctx.currentTime;
+            }
+            if (message.serverContent?.modelTurn?.parts?.[0]?.text) {
+               setLiveTranscription(prev => prev + " " + message.serverContent.modelTurn.parts[0].text);
+            }
+          },
+          onclose: () => {
+            setIsLiveActive(false);
+            setLiveSession(null);
+            processorRef.current?.disconnect();
+          },
+          onerror: (e) => console.error("Live error:", e),
         }
       });
 
-      setLiveSession(session);
-    } catch (e) {
+      setLiveSession(await sessionPromise);
+    } catch (e: any) {
       console.error("Failed to start live session:", e);
+      if (e.name === 'NotAllowedError' || e.message?.includes('Permission denied')) {
+        showToast("Пожалуйста, разрешите доступ к микрофону в настройках браузера.", "error");
+      } else {
+        showToast("Произошла ошибка при запуске голосового помощника.", "error");
+      }
     }
   };
 
@@ -885,10 +782,56 @@ function AppContent() {
       setIsLiveActive(false);
       setLiveSession(null);
     }
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
+    }
     if (audioContext) {
       audioContext.close();
       setAudioContext(null);
     }
+  };
+
+  const toggleVoiceTyping = () => {
+    if (isVoiceTyping) {
+      recognitionRef.current?.stop();
+      setIsVoiceTyping(false);
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      showToast("Ваш браузер не поддерживает голосовой ввод.", "error");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.interimResults = true;
+    recognition.continuous = false;
+
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results)
+        .map((result: any) => result[0])
+        .map((result: any) => result.transcript)
+        .join('');
+      setInput(transcript);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("Speech recognition error", event.error);
+      if (event.error === 'not-allowed') {
+        showToast("Пожалуйста, разрешите доступ к микрофону в настройках браузера.", "error");
+      }
+      setIsVoiceTyping(false);
+    };
+
+    recognition.onend = () => {
+      setIsVoiceTyping(false);
+    };
+
+    recognition.start();
+    setIsVoiceTyping(true);
+    recognitionRef.current = recognition;
   };
 
   // Auto scroll to bottom
@@ -926,7 +869,7 @@ function AppContent() {
     setSessions(updated);
     setCurrentSessionId(newSessionId);
     setSelectedDept(dept);
-    syncSessions(updated);
+    syncSessions(updated, newSessionId);
     
     if (window.innerWidth < 768) setIsSidebarOpen(false);
 
@@ -1037,7 +980,7 @@ function AppContent() {
             }
             return s;
           });
-          syncSessions(finalSessions);
+          syncSessions(finalSessions, targetSessionId);
           return finalSessions;
         });
       } else if (sessionType === 'quiz') {
@@ -1056,7 +999,7 @@ function AppContent() {
             }
             return s;
           });
-          syncSessions(finalSessions);
+          syncSessions(finalSessions, targetSessionId);
           return finalSessions;
         });
       } else {
@@ -1072,6 +1015,7 @@ function AppContent() {
         
         const surgeMessageId = crypto.randomUUID();
         let currentContent = "";
+        let currentGroundingChunks: any[] = [];
 
         // Add empty message first
         setSessions(prev => {
@@ -1095,22 +1039,32 @@ function AppContent() {
         for await (const chunk of responseStream) {
           if (chunk.text) {
             currentContent += chunk.text;
-            setSessions(prev => prev.map(s => s.id === targetSessionId ? {
-              ...s,
-              messages: s.messages.map(m => m.id === surgeMessageId ? { ...m, content: currentContent } : m)
-            } : s));
           }
+          if (chunk.candidates?.[0]?.groundingMetadata?.groundingChunks) {
+            currentGroundingChunks = chunk.candidates[0].groundingMetadata.groundingChunks;
+          }
+          setSessions(prev => prev.map(s => s.id === targetSessionId ? {
+            ...s,
+            messages: s.messages.map(m => m.id === surgeMessageId ? { ...m, content: currentContent, groundingChunks: currentGroundingChunks } : m)
+          } : s));
         }
 
         // Sync after stream finishes
         setSessions(prev => {
-          syncSessions(prev);
+          syncSessions(prev, targetSessionId);
           return prev;
         });
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Spyris error:", error);
+      
+      if (error.message?.includes('Document size exceeds supported limit') || error.message?.includes('Http response at 400 or 500 level')) {
+        showToast("Файл слишком большой для обработки. Пожалуйста, загрузите файл меньшего размера.", "error");
+      } else {
+        showToast("Произошла ошибка при обращении к ИИ.", "error");
+      }
+
       // Add error message
       setSessions(prev => {
         const finalSessions = prev.map(s => {
@@ -1128,7 +1082,7 @@ function AppContent() {
           }
           return s;
         });
-        syncSessions(finalSessions);
+        syncSessions(finalSessions, targetSessionId);
         return finalSessions;
       });
     } finally {
@@ -1157,6 +1111,10 @@ function AppContent() {
     const newImages: { data: string, mimeType: string, name: string, url: string }[] = [];
 
     for (const file of filesToProcess) {
+      if (file.size > 5 * 1024 * 1024) {
+        showToast(`Изображение "${file.name}" слишком большое (макс. 5 МБ).`, "error");
+        continue;
+      }
       const reader = new FileReader();
       const promise = new Promise<void>((resolve) => {
         reader.onload = async (event) => {
@@ -1189,15 +1147,19 @@ function AppContent() {
   const archiveSession = (id: string) => {
     const updated = sessions.map(s => s.id === id ? { ...s, isArchived: !s.isArchived } : s);
     setSessions(updated);
-    syncSessions(updated);
+    syncSessions(updated, id);
   };
 
-  const deleteSession = (id: string) => {
+  const deleteSession = async (id: string) => {
     const updated = sessions.filter(s => s.id !== id);
     setSessions(updated);
-    syncSessions(updated);
     if (currentSessionId === id) {
       setCurrentSessionId(updated.length > 0 ? updated[0].id : null);
+    }
+    try {
+      await deleteDoc(doc(db, 'sessions', id));
+    } catch (e) {
+      console.error("Failed to delete session", e);
     }
   };
 
@@ -1429,10 +1391,17 @@ function AppContent() {
             <div className="px-4 mb-6 flex gap-2">
               <button 
                 onClick={() => createNewSession('chat', selectedDept)}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-surge-purple hover:bg-surge-purple-dark text-white rounded-xl font-bold transition-all shadow-lg shadow-surge-purple/20 active:scale-95"
+                className="flex-1 flex items-center justify-center gap-2 py-3 bg-surge-purple hover:bg-surge-purple-dark text-white rounded-xl font-bold transition-all shadow-lg shadow-surge-purple/20 active:scale-95"
               >
                 <Plus size={18} />
                 <span>New Session</span>
+              </button>
+              <button 
+                onClick={() => setSelectedDept('Projects')}
+                className="flex items-center justify-center gap-2 py-3 px-4 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-violet-600/20 active:scale-95"
+                title="Projects"
+              >
+                <Layers size={18} />
               </button>
             </div>
 
@@ -1701,6 +1670,18 @@ function AppContent() {
                       </button>
                     </div>
                   )}
+
+                  <div className="mb-10 relative z-10">
+                    <label className="block text-[10px] font-bold text-surge-ink/30 uppercase tracking-widest mb-2 ml-1">Дополнительная информация (например, какие темы вызывают трудности)</label>
+                    <textarea 
+                      rows={3}
+                      placeholder="Опишите вашу ситуацию, цели или проблемы с предметами..."
+                      value={marksDescription}
+                      onChange={(e) => setMarksDescription(e.target.value)}
+                      className="w-full bg-amber-500/5 border border-amber-500/20 rounded-xl px-4 py-3 text-surge-ink focus:outline-none focus:border-amber-500/50 transition-all resize-none font-medium text-sm"
+                    />
+                  </div>
+
                   <button 
                     onClick={async () => {
                       const activeMarks = Object.entries(marksData)
@@ -1717,7 +1698,7 @@ function AppContent() {
                         const marksStr = activeMarks.map(([s, g]) => `${s}: ${g}`).join(', ');
                         const response = await ai.models.generateContent({
                           model: "gemini-3-flash-preview",
-                          contents: `Analyze these academic marks (on a 0-5 scale): ${marksStr}. Provide a personalized improvement plan, identifying strengths and weaknesses. Format as a structured list with clear advice for each subject. Use Markdown.`,
+                          contents: `Analyze these academic marks (on a 0-5 scale): ${marksStr}. ${marksDescription ? `Additional context from user: ${marksDescription}` : ''} Provide a personalized improvement plan, identifying strengths and weaknesses. Format as a structured list with clear advice for each subject. Use Markdown.`,
                         });
                         setMarksAnalysisResult(response.text || "No analysis generated.");
                         addXp(50);
@@ -1847,8 +1828,14 @@ function AppContent() {
                       <motion.div 
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-4"
+                        className="bg-blue-500/5 border border-blue-500/20 rounded-2xl p-4 relative"
                       >
+                        <button 
+                          onClick={() => setShowUrlInput(false)}
+                          className="absolute top-2 right-2 p-1 text-surge-ink/30 hover:text-surge-ink bg-surge-ink/5 hover:bg-surge-ink/10 rounded-full transition-colors"
+                        >
+                          <X size={14} />
+                        </button>
                         <label className="block text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-2 ml-1">Source URL (YouTube, Article, etc.)</label>
                         <div className="flex gap-2">
                           <input 
@@ -1944,8 +1931,14 @@ function AppContent() {
                         <motion.div 
                           initial={{ opacity: 0, y: -10 }}
                           animate={{ opacity: 1, y: 0 }}
-                          className="bg-pink-500/5 border border-pink-500/20 rounded-2xl p-4"
+                          className="bg-pink-500/5 border border-pink-500/20 rounded-2xl p-4 relative"
                         >
+                          <button 
+                            onClick={() => setShowUrlInput(false)}
+                            className="absolute top-2 right-2 p-1 text-surge-ink/30 hover:text-surge-ink bg-surge-ink/5 hover:bg-surge-ink/10 rounded-full transition-colors"
+                          >
+                            <X size={14} />
+                          </button>
                           <label className="block text-[10px] font-bold text-pink-500 uppercase tracking-widest mb-2 ml-1">Source URL (YouTube, Article, etc.)</label>
                           <div className="flex gap-2">
                             <input 
@@ -2150,8 +2143,14 @@ function AppContent() {
                       <motion.div 
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="bg-rose-500/5 border border-rose-500/20 rounded-2xl p-4"
+                        className="bg-rose-500/5 border border-rose-500/20 rounded-2xl p-4 relative"
                       >
+                        <button 
+                          onClick={() => setShowUrlInput(false)}
+                          className="absolute top-2 right-2 p-1 text-surge-ink/30 hover:text-surge-ink bg-surge-ink/5 hover:bg-surge-ink/10 rounded-full transition-colors"
+                        >
+                          <X size={14} />
+                        </button>
                         <label className="block text-[10px] font-bold text-rose-500 uppercase tracking-widest mb-2 ml-1">Source URL (YouTube, Article, etc.)</label>
                         <div className="flex gap-2">
                           <input 
@@ -2434,8 +2433,8 @@ function AppContent() {
                   </div>
                   
                   <div className="relative z-10 text-center mb-12">
-                    <h2 className="text-4xl font-display font-bold text-surge-ink mb-4">Live Voice Conversation</h2>
-                    <p className="text-surge-ink/40 font-medium">Experience real-time, low-latency AI interaction with Spyris</p>
+                    <h2 className="text-4xl font-display font-bold text-surge-ink mb-4">Voice Chat</h2>
+                    <p className="text-surge-ink/40 font-medium">Спокойный и дружелюбный собеседник для обсуждения учебы</p>
                   </div>
 
                   <div className="w-48 h-48 rounded-full bg-surge-purple/10 flex items-center justify-center mb-12 relative z-10">
@@ -2462,29 +2461,13 @@ function AppContent() {
                   </div>
 
                   <div className="flex flex-col items-center gap-6 relative z-10 w-full max-w-md">
-                    <div className="mb-4 w-full">
-                      <label className="block text-[10px] font-bold text-surge-ink/30 uppercase tracking-widest mb-2 ml-1 text-center">Voice Persona</label>
-                      <select 
-                        value={voiceName}
-                        onChange={(e) => setVoiceName(e.target.value)}
-                        disabled={isLiveActive}
-                        className="w-full bg-indigo-500/10 border border-indigo-500/20 rounded-xl px-4 py-3 text-surge-ink focus:outline-none focus:border-indigo-500 transition-all font-bold text-sm text-center disabled:opacity-50"
-                      >
-                        <option value="Zephyr" className="bg-surge-card text-surge-ink">Zephyr (Default, Energetic)</option>
-                        <option value="Puck" className="bg-surge-card text-surge-ink">Puck (Friendly, Warm)</option>
-                        <option value="Charon" className="bg-surge-card text-surge-ink">Charon (Deep, Calm)</option>
-                        <option value="Kore" className="bg-surge-card text-surge-ink">Kore (Clear, Professional)</option>
-                        <option value="Fenrir" className="bg-surge-card text-surge-ink">Fenrir (Strong, Confident)</option>
-                      </select>
-                    </div>
-
                     {isLiveActive ? (
                       <button 
                         onClick={stopLiveSession}
                         className="px-12 py-4 bg-red-500 hover:bg-red-600 text-white font-bold rounded-2xl shadow-xl shadow-red-500/20 transition-all active:scale-95 flex items-center gap-3"
                       >
                         <Square size={20} fill="currentColor" />
-                        STOP SESSION
+                        STOP
                       </button>
                     ) : (
                       <button 
@@ -2492,7 +2475,7 @@ function AppContent() {
                         className="px-12 py-4 bg-surge-purple hover:bg-surge-purple/90 text-white font-bold rounded-2xl shadow-xl shadow-surge-purple/20 transition-all active:scale-95 flex items-center gap-3"
                       >
                         <Play size={20} fill="currentColor" />
-                        START CONVERSATION
+                        START
                       </button>
                     )}
 
@@ -2672,8 +2655,14 @@ function AppContent() {
                             try {
                               const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
                               const response = await ai.models.generateContent({
-                                model: "gemini-3-flash-preview",
-                                contents: `Find the best and most relevant educational YouTube videos for a student in ${smartVideosData.classLevel} studying ${smartVideosData.topic}. ${smartVideosData.description ? `Additional context: ${smartVideosData.description}` : ''} Use the Google Search tool to find REAL, ACTIVE, and RECENT YouTube video IDs. Ensure the videos are educational and high quality. Return ONLY a JSON array of objects with 'id' (the YouTube video ID), 'title', and 'desc' (brief description).`,
+                                model: "gemini-3.1-pro-preview", // Use pro for better search and extraction
+                                contents: `Search Google for educational YouTube videos about "${smartVideosData.topic}" for ${smartVideosData.classLevel}. ${smartVideosData.description ? `Additional context: ${smartVideosData.description}` : ''} 
+                                
+                                CRITICAL INSTRUCTIONS:
+                                1. You MUST use the googleSearch tool to find REAL youtube.com video URLs.
+                                2. Extract the exact 11-character video ID from the 'v=' parameter of the real YouTube URLs you find.
+                                3. DO NOT make up, guess, or hallucinate video IDs. If you don't find real URLs, search again.
+                                4. Return ONLY a JSON array of objects with 'id' (the 11-character YouTube video ID), 'title', and 'desc' (brief description).`,
                                 config: {
                                   tools: [{ googleSearch: {} }],
                                   toolConfig: { includeServerSideToolInvocations: true } as any,
@@ -2766,6 +2755,19 @@ function AppContent() {
                                 <p className="text-surge-ink/50 text-sm line-clamp-3 leading-relaxed font-medium">{video.desc}</p>
                                 <div className="mt-6 pt-4 border-t border-surge-ink/5 flex justify-between items-center">
                                   <div className="flex gap-4">
+                                    <button 
+                                      onClick={() => {
+                                        const msg = `Generate a conspect for this video: ${video.title} - https://www.youtube.com/watch?v=${video.id}`;
+                                        if (!currentSessionId) {
+                                          createNewSession('chat', 'SmartVideos', msg);
+                                        } else {
+                                          handleSendMessage(undefined, msg);
+                                        }
+                                      }}
+                                      className="text-[10px] font-black text-surge-ink/30 uppercase tracking-widest hover:text-red-500 transition-colors"
+                                    >
+                                      Generate Conspect
+                                    </button>
                                     <button 
                                       onClick={() => {
                                         const msg = `Check out this video: ${video.title} - https://www.youtube.com/watch?v=${video.id}`;
@@ -3244,11 +3246,37 @@ function AppContent() {
                             <div className="markdown-body">
                               {message.content && (
                                 <Markdown 
-                                  remarkPlugins={[remarkMath]} 
+                                  remarkPlugins={[remarkMath, remarkGfm]} 
                                   rehypePlugins={[rehypeKatex]}
+                                  components={{
+                                    a: ({node, ...props}) => <a {...props} target="_blank" rel="noopener noreferrer" className="text-surge-purple hover:underline" />
+                                  }}
                                 >
                                   {message.content}
                                 </Markdown>
+                              )}
+                              {message.groundingChunks && message.groundingChunks.length > 0 && (
+                                <div className="mt-4 pt-4 border-t border-surge-ink/10">
+                                  <h4 className="text-xs font-bold text-surge-ink/50 uppercase tracking-widest mb-2">Sources</h4>
+                                  <div className="flex flex-wrap gap-2">
+                                    {message.groundingChunks.map((chunk, idx) => {
+                                      if (chunk.web?.uri) {
+                                        return (
+                                          <a 
+                                            key={idx} 
+                                            href={chunk.web.uri} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-surge-ink/5 hover:bg-surge-ink/10 rounded-lg text-xs font-medium text-surge-ink/70 transition-colors"
+                                          >
+                                            <span className="truncate max-w-[200px]">{chunk.web.title || new URL(chunk.web.uri).hostname}</span>
+                                          </a>
+                                        );
+                                      }
+                                      return null;
+                                    })}
+                                  </div>
+                                </div>
                               )}
                               {message.flashcards && <FlashcardViewer flashcards={message.flashcards} />}
                               {message.quiz && <QuizViewer quiz={message.quiz} />}
@@ -3273,8 +3301,11 @@ function AppContent() {
                             <div className="markdown-body user-markdown">
                               {message.content && (
                                 <Markdown 
-                                  remarkPlugins={[remarkMath]} 
+                                  remarkPlugins={[remarkMath, remarkGfm]} 
                                   rehypePlugins={[rehypeKatex]}
+                                  components={{
+                                    a: ({node, ...props}) => <a {...props} target="_blank" rel="noopener noreferrer" className="underline" />
+                                  }}
                                 >
                                   {message.content}
                                 </Markdown>
@@ -3423,23 +3454,38 @@ function AppContent() {
                         </div>
                       </div>
                     )}
-                    <textarea 
-                      rows={1}
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          handleSendMessage();
-                        }
-                      }}
-                      placeholder={uploadedFile ? `Ask about ${uploadedFile.name}...` : 
-                                   currentSession?.department === 'Marks' ? "Enter your marks (e.g. Algebra: 3, Science: 4)..." : 
-                                   currentSession?.department === 'Flashcards' ? "Enter a new topic to generate more flashcards..." :
-                                   currentSession?.department === 'Quizzes' ? "Enter a new topic to generate another quiz..." :
-                                   "Message Spyris..."}
-                      className="w-full bg-transparent border-none focus:ring-0 py-4 text-base resize-none max-h-60 text-surge-ink placeholder:text-surge-ink/20 font-medium"
-                    />
+                    <div className="w-full flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={toggleVoiceTyping}
+                        className={cn(
+                          "p-2 rounded-xl transition-all flex-shrink-0 flex items-center justify-center",
+                          isVoiceTyping 
+                            ? "bg-red-500 text-white shadow-lg shadow-red-500/30 animate-pulse" 
+                            : "bg-surge-ink/5 text-surge-ink/40 hover:bg-surge-ink/10 hover:text-surge-ink"
+                        )}
+                        title="Голосовой ввод"
+                      >
+                        <Mic size={20} />
+                      </button>
+                      <textarea 
+                        rows={1}
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            handleSendMessage();
+                          }
+                        }}
+                        placeholder={isVoiceTyping ? "Говорите..." : uploadedFile ? `Ask about ${uploadedFile.name}...` : 
+                                     currentSession?.department === 'Marks' ? "Enter your marks (e.g. Algebra: 3, Science: 4)..." : 
+                                     currentSession?.department === 'Flashcards' ? "Enter a new topic to generate more flashcards..." :
+                                     currentSession?.department === 'Quizzes' ? "Enter a new topic to generate another quiz..." :
+                                     "Message Spyris..."}
+                        className="w-full bg-transparent border-none focus:ring-0 py-4 text-base resize-none max-h-60 text-surge-ink placeholder:text-surge-ink/20 font-medium"
+                      />
+                    </div>
                   </div>
                   
                   <button 
