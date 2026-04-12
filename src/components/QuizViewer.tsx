@@ -6,12 +6,14 @@ import { cn } from '../utils';
 
 interface Props {
   quiz: QuizQuestion[];
+  onComplete?: () => void;
 }
 
-export function QuizViewer({ quiz }: Props) {
+export function QuizViewer({ quiz, onComplete }: Props) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<(number | null)[]>(new Array(quiz.length).fill(null));
   const [showResults, setShowResults] = useState(false);
+  const [hasNotifiedCompletion, setHasNotifiedCompletion] = useState(false);
 
   if (!quiz || quiz.length === 0) {
     return (
@@ -33,6 +35,10 @@ export function QuizViewer({ quiz }: Props) {
       setCurrentIndex(currentIndex + 1);
     } else {
       setShowResults(true);
+      if (onComplete && !hasNotifiedCompletion) {
+        onComplete();
+        setHasNotifiedCompletion(true);
+      }
     }
   };
 

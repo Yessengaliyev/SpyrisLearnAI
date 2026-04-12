@@ -1,11 +1,23 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc, Timestamp } from 'firebase/firestore';
+import { User } from './types';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase SDK
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// For environments where WebSockets might be blocked, force long polling
+import { initializeFirestore } from 'firebase/firestore';
+try {
+  initializeFirestore(app, {
+    experimentalForceLongPolling: true,
+  }, firebaseConfig.firestoreDatabaseId);
+} catch (e) {
+  // Already initialized, ignore
+}
+
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
@@ -33,17 +45,34 @@ export const createUserProfile = async (user: FirebaseUser) => {
   const docRef = doc(db, 'users', user.uid);
   const profile = {
     uid: user.uid,
-    displayName: user.displayName || 'Student',
+    name: user.displayName || 'Student',
     email: user.email,
     photoURL: user.photoURL,
     level: 1,
     xp: 0,
     rank: 'Novice Scholar',
     badges: [],
+    testsCompleted: 0,
     createdAt: new Date().toISOString()
   };
   await setDoc(docRef, profile, { merge: true });
   return profile;
+};
+
+export const updateUserProfile = async (uid: string, updates: Partial<User>) => {
+  const docRef = doc(db, 'users', uid);
+  await updateDoc(docRef, updates);
+};
+
+export const updateTestsCompleted = async (uid: string) => {
+  const docRef = doc(db, 'users', uid);
+  const snap = await getDoc(docRef);
+  if (snap.exists()) {
+    const data = snap.data();
+    await updateDoc(docRef, { 
+      testsCompleted: (data.testsCompleted || 0) + 1 
+    });
+  }
 };
 
 export const updateXP = async (uid: string, xpToAdd: number) => {

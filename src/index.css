@@ -83,6 +83,11 @@
 .markdown-body pre { @apply bg-surge-ink/5 border border-surge-border text-surge-ink p-4 rounded-xl overflow-x-auto mb-4 font-mono text-sm backdrop-blur-md; }
 
 .markdown-body blockquote { @apply border-l-4 border-surge-purple pl-4 italic mb-4 text-surge-ink/60 bg-surge-purple/5 py-2 rounded-r-lg; }
+.markdown-body table { @apply w-full border-collapse mb-4 overflow-hidden rounded-xl border border-surge-border; }
+.markdown-body .table-container { @apply overflow-x-auto mb-4; }
+.markdown-body th { @apply bg-surge-purple/20 text-surge-purple font-bold p-3 text-left border border-surge-border; }
+.markdown-body td { @apply p-3 border border-surge-border text-surge-ink/80; }
+.markdown-body tr:nth-child(even) { @apply bg-surge-ink/5; }
 .user-markdown p { @apply text-white mb-0; }
 .user-markdown .katex-display { @apply my-2; }
 .user-markdown .katex { @apply text-white; }
@@ -108,10 +113,28 @@
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  @apply bg-transparent;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-surge-border rounded-full hover:bg-surge-purple/50 transition-colors;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(168, 85, 247, 0.3);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(168, 85, 247, 0.2);
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(168, 85, 247, 0.4);
 }
 
 body.light {

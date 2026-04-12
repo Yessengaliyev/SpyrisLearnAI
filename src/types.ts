@@ -4,10 +4,12 @@ export interface User {
   uid: string;
   email: string;
   name: string;
+  photoURL?: string;
   xp: number;
   level: number;
   rank: string;
   badges: string[];
+  testsCompleted?: number;
 }
 
 export interface Flashcard {
@@ -40,6 +42,7 @@ export interface ChatSession {
   messages: Message[];
   isArchived: boolean;
   createdAt: number;
+  lastUpdated?: number;
   type: 'chat' | 'conspect' | 'flashcards' | 'quiz';
   department: Department;
 }

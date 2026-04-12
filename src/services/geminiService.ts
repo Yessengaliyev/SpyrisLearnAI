@@ -17,7 +17,7 @@ export const ttsModel = "gemini-2.5-flash-preview-tts";
 
 export async function chatWithSpyris(message: string, history: { role: string; parts: { text: string }[] }[] = [], department: string = 'General') {
   try {
-    let systemInstruction = "Your name is Spyris. You are a brilliant, encouraging, and highly efficient AI study assistant for SpyrisLearn. You are multilingual and can speak and understand any language requested by the user, including Kazakh, Russian, English, and others. Always respond in the language the user is speaking to you in. You specialize in various academic departments. Your goal is to help students with their lessons, explain complex topics simply, and help them create high-quality study notes (conspects). Use markdown for formatting. When providing mathematical or physics formulas, ALWAYS use LaTeX syntax enclosed in double dollar signs for block math (e.g., $$E = mc^2$$) or single dollar signs for inline math (e.g., $a^2 + b^2 = c^2$). Ensure you use backslashes (\\) for LaTeX commands, NOT forward slashes (/). Your personality is tech-forward, helpful, and energetic. IMPORTANT: Be concise and context-aware. If the user sends a simple greeting like 'hello' or 'привет', respond briefly and ask how you can help. Do not write long paragraphs unless the user asks a complex question.";
+    let systemInstruction = "Your name is Spyris. You are a brilliant, encouraging, and highly efficient AI study assistant for SpyrisLearn. You are multilingual and can speak and understand any language requested by the user, including Kazakh, Russian, English, and others. Always respond in the language the user is speaking to you in. You specialize in various academic departments. Your goal is to help students with their lessons, explain complex topics simply, and help them create high-quality study notes (conspects). Use markdown for formatting. For structured data, comparisons, schedules, or lists that benefit from a grid layout, ALWAYS use markdown tables (кесте) to ensure clarity and prevent text from 'sticking together'. When providing mathematical or physics formulas, ALWAYS use LaTeX syntax enclosed in double dollar signs for block math (e.g., $$E = mc^2$$) or single dollar signs for inline math (e.g., $a^2 + b^2 = c^2$). Ensure you use backslashes (\\) for LaTeX commands, NOT forward slashes (/). Your personality is tech-forward, helpful, and energetic. IMPORTANT: Be concise and context-aware. If the user sends a simple greeting like 'hello' or 'привет', respond briefly and ask how you can help. Do not write long paragraphs unless the user asks a complex question.";
 
     if (department === 'Marks') {
       systemInstruction += " You are currently in the 'Marks' department. When a student provides their marks for various subjects, analyze them. Identify subjects that need improvement (e.g., marks below 4 or 70%) and create a personalized study plan and specific tasks to help them improve those grades.";
@@ -42,8 +42,7 @@ export async function chatWithSpyris(message: string, history: { role: string; p
         { role: "user", parts: [{ text: message }] }
       ],
       config: {
-        systemInstruction,
-        tools: [{ googleSearch: {} }, { urlContext: {} }]
+        systemInstruction
       }
     });
 
@@ -64,17 +63,26 @@ export async function chatWithSpyrisStream(
   department: string = 'General', 
   attachedImages?: { data: string, mimeType: string }[], 
   sourceUrl?: string, 
-  uploadedFile?: { name: string, data: string, type: string } | null,
+  uploadedFiles?: { name: string, data: string, type: string }[],
   isThinking: boolean = false,
-  isLite: boolean = false
+  isLite: boolean = false,
+  isDeepResearch: boolean = false,
+  isWebSearch: boolean = false,
+  isStudyMode: boolean = false
 ) {
   try {
-    const modelToUse = isThinking ? proModel : (isLite ? liteModel : spyrisModel);
+    const modelToUse = (isThinking || isDeepResearch) ? proModel : (isLite ? liteModel : spyrisModel);
     
-    let systemInstruction = "Your name is Spyris. You are a brilliant, encouraging, and highly efficient AI study assistant for SpyrisLearn. You are multilingual and can speak and understand any language requested by the user, including Kazakh, Russian, English, and others. Always respond in the language the user is speaking to you in. You specialize in various academic departments. Your goal is to help students with their lessons, explain complex topics simply, and help them create high-quality study notes (conspects). Use markdown for formatting. When providing mathematical or physics formulas, ALWAYS use LaTeX syntax enclosed in double dollar signs for block math (e.g., $$E = mc^2$$) or single dollar signs for inline math (e.g., $a^2 + b^2 = c^2$). Ensure you use backslashes (\\) for LaTeX commands, NOT forward slashes (/). Your personality is tech-forward, helpful, and energetic. IMPORTANT: Be concise and context-aware. If the user sends a simple greeting like 'hello' or 'привет', respond briefly and ask how you can help. Do not write long paragraphs unless the user asks a complex question.";
+    let systemInstruction = "Your name is Spyris. You are a brilliant, encouraging, and highly efficient AI study assistant for SpyrisLearn. You are multilingual and can speak and understand any language requested by the user, including Kazakh, Russian, English, and others. Always respond in the language the user is speaking to you in. You specialize in various academic departments. Your goal is to help students with their lessons, explain complex topics simply, and help them create high-quality study notes (conspects). Use markdown for formatting. For structured data, comparisons, schedules, or lists that benefit from a grid layout, ALWAYS use markdown tables (кесте) to ensure clarity and prevent text from 'sticking together'. When providing mathematical or physics formulas, ALWAYS use LaTeX syntax enclosed in double dollar signs for block math (e.g., $$E = mc^2$$) or single dollar signs for inline math (e.g., $a^2 + b^2 = c^2$). Ensure you use backslashes (\\) for LaTeX commands, NOT forward slashes (/). Your personality is tech-forward, helpful, and energetic. IMPORTANT: Be concise and context-aware. If the user sends a simple greeting like 'hello' or 'привет', respond briefly and ask how you can help. Do not write long paragraphs unless the user asks a complex question.";
 
     if (isThinking) {
       systemInstruction += " You are in 'Thinking Mode'. Provide deep, step-by-step reasoning for complex academic problems. Break down the logic clearly before giving the final answer.";
+    }
+    if (isDeepResearch) {
+      systemInstruction += " You are in 'Deep Research Mode'. Provide extremely detailed, comprehensive, and well-researched answers. Explore multiple perspectives and provide in-depth analysis.";
+    }
+    if (isStudyMode) {
+      systemInstruction += " You are in 'Study Mode'. Focus on pedagogical methods, test the user's understanding, and provide explanations suitable for learning and retention.";
     }
 
     if (department === 'Marks') {
@@ -105,12 +113,17 @@ export async function chatWithSpyrisStream(
       });
     }
 
-    if (uploadedFile) {
-      parts.push({
-        inlineData: {
-          data: uploadedFile.data,
-          mimeType: uploadedFile.type || "application/pdf"
-        }
+    if (uploadedFiles && uploadedFiles.length > 0) {
+      uploadedFiles.forEach(file => {
+        // Gemini doesn't support application/octet-stream. 
+        // If it's still that, default to text/plain which is safer.
+        const safeMimeType = (file.type === 'application/octet-stream' || !file.type) ? 'text/plain' : file.type;
+        parts.push({
+          inlineData: {
+            data: file.data,
+            mimeType: safeMimeType
+          }
+        });
       });
     }
     
@@ -119,12 +132,21 @@ export async function chatWithSpyrisStream(
       finalMessage = `Please use the content from this URL to help with the request: ${sourceUrl}\n\nUser Request: ${message}`;
     }
 
-    if (uploadedFile) {
-      finalMessage = `Please use the content from the attached file "${uploadedFile.name}" to help with the request.\n\nUser Request: ${finalMessage}`;
+    if (uploadedFiles && uploadedFiles.length > 0) {
+      const fileNames = uploadedFiles.map(f => f.name).join(', ');
+      finalMessage = `Please use the content from the attached files (${fileNames}) to help with the request.\n\nUser Request: ${finalMessage}`;
     }
 
     if (finalMessage) {
       parts.push({ text: finalMessage });
+    }
+
+    const tools: any[] = [];
+    if (sourceUrl) {
+      tools.push({ urlContext: {} });
+    }
+    if (isWebSearch) {
+      tools.push({ googleSearch: {} });
     }
 
     const response = await ai.models.generateContentStream({
@@ -135,8 +157,7 @@ export async function chatWithSpyrisStream(
       ],
       config: {
         systemInstruction,
-        tools: [{ googleSearch: {} }, { urlContext: {} }],
-        thinkingConfig: isThinking ? { thinkingLevel: ThinkingLevel.HIGH } : undefined
+        tools
       }
     });
 
@@ -178,47 +199,56 @@ export async function analyzeImageForConspect(images: { data: string, mimeType: 
   }
 }
 
-export async function generateFlashcards(prompt: string, history: any[], sourceUrl?: string, uploadedFile?: { name: string, data: string, type: string } | null): Promise<Flashcard[]> {
+export async function generateFlashcards(prompt: string, history: any[], sourceUrl?: string, uploadedFiles?: { name: string, data: string, type: string }[]): Promise<Flashcard[]> {
   try {
     const historyText = history.map(h => `${h.role}: ${h.parts.map((p: any) => p.text || '[Image]').join(' ')}`).join('\n');
     let finalPrompt = `Conversation history:\n${historyText}\n\nGenerate flashcards based on this request: "${prompt}". If no specific number is given, generate 10.`;
     
     const parts: any[] = [];
-    if (uploadedFile) {
-      parts.push({
-        inlineData: {
-          data: uploadedFile.data,
-          mimeType: uploadedFile.type || "application/pdf"
-        }
+    if (uploadedFiles && uploadedFiles.length > 0) {
+      uploadedFiles.forEach(file => {
+        const safeMimeType = (file.type === 'application/octet-stream' || !file.type) ? 'text/plain' : file.type;
+        parts.push({
+          inlineData: {
+            data: file.data,
+            mimeType: safeMimeType
+          }
+        });
       });
-      finalPrompt = `Please use the content from the attached file "${uploadedFile.name}" to generate flashcards.\n\nUser Request: ${prompt}\n\nIf no specific number is given, generate 10.`;
+      const fileNames = uploadedFiles.map(f => f.name).join(', ');
+      finalPrompt = `Please use the content from the attached files (${fileNames}) to generate flashcards.\n\nUser Request: ${prompt}\n\nIf no specific number is given, generate 10.`;
     } else if (sourceUrl) {
       finalPrompt = `Please use the content from this URL to generate flashcards: ${sourceUrl}\n\nUser Request: ${prompt}\n\nIf no specific number is given, generate 10.`;
     }
 
     parts.push({ text: finalPrompt });
 
+    const config: any = {
+      systemInstruction: "You are an expert teacher creating flashcards. Provide concise, clear fronts and backs. If no specific number is given, generate 10.",
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            front: { type: Type.STRING, description: "The question or concept on the front of the flashcard." },
+            back: { type: Type.STRING, description: "The answer or explanation on the back of the flashcard." }
+          },
+          required: ["front", "back"]
+        }
+      }
+    };
+
+    if (sourceUrl) {
+      config.tools = [{ urlContext: {} }];
+    }
+
     const response = await ai.models.generateContent({
       model: spyrisModel,
       contents: [
         { role: 'user', parts }
       ],
-      config: {
-        systemInstruction: "You are an expert teacher creating flashcards. Provide concise, clear fronts and backs. If no specific number is given, generate 10.",
-        tools: [{ urlContext: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              front: { type: Type.STRING, description: "The question or concept on the front of the flashcard." },
-              back: { type: Type.STRING, description: "The answer or explanation on the back of the flashcard." }
-            },
-            required: ["front", "back"]
-          }
-        }
-      }
+      config
     });
     
     if (response.text) {
@@ -240,53 +270,62 @@ export async function generateFlashcards(prompt: string, history: any[], sourceU
   }
 }
 
-export async function generateQuiz(prompt: string, history: any[], sourceUrl?: string, uploadedFile?: { name: string, data: string, type: string } | null): Promise<QuizQuestion[]> {
+export async function generateQuiz(prompt: string, history: any[], sourceUrl?: string, uploadedFiles?: { name: string, data: string, type: string }[]): Promise<QuizQuestion[]> {
   try {
     const historyText = history.map(h => `${h.role}: ${h.parts.map((p: any) => p.text || '[Image]').join(' ')}`).join('\n');
     let finalPrompt = `Conversation history:\n${historyText}\n\nGenerate a multiple-choice quiz based on this request: "${prompt}". If no specific number is given, generate 5 questions.`;
     
     const parts: any[] = [];
-    if (uploadedFile) {
-      parts.push({
-        inlineData: {
-          data: uploadedFile.data,
-          mimeType: uploadedFile.type || "application/pdf"
-        }
+    if (uploadedFiles && uploadedFiles.length > 0) {
+      uploadedFiles.forEach(file => {
+        const safeMimeType = (file.type === 'application/octet-stream' || !file.type) ? 'text/plain' : file.type;
+        parts.push({
+          inlineData: {
+            data: file.data,
+            mimeType: safeMimeType
+          }
+        });
       });
-      finalPrompt = `Please use the content from the attached file "${uploadedFile.name}" to generate a quiz.\n\nUser Request: ${prompt}\n\nIf no specific number is given, generate 5 questions.`;
+      const fileNames = uploadedFiles.map(f => f.name).join(', ');
+      finalPrompt = `Please use the content from the attached files (${fileNames}) to generate a quiz.\n\nUser Request: ${prompt}\n\nIf no specific number is given, generate 5 questions.`;
     } else if (sourceUrl) {
       finalPrompt = `Please use the content from this URL to generate a quiz: ${sourceUrl}\n\nUser Request: ${prompt}\n\nIf no specific number is given, generate 5 questions.`;
     }
 
     parts.push({ text: finalPrompt });
 
+    const config: any = {
+      systemInstruction: "You are an expert teacher creating a quiz. Provide clear questions, 4 options, the correct answer index (0-3), and a brief explanation. If no specific number is given, generate 5 questions.",
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            question: { type: Type.STRING, description: "The quiz question." },
+            options: { 
+              type: Type.ARRAY, 
+              items: { type: Type.STRING },
+              description: "Exactly 4 possible answers."
+            },
+            correctAnswerIndex: { type: Type.INTEGER, description: "The index (0 to 3) of the correct option." },
+            explanation: { type: Type.STRING, description: "A brief explanation of why the answer is correct." }
+          },
+          required: ["question", "options", "correctAnswerIndex", "explanation"]
+        }
+      }
+    };
+
+    if (sourceUrl) {
+      config.tools = [{ urlContext: {} }];
+    }
+
     const response = await ai.models.generateContent({
       model: spyrisModel,
       contents: [
         { role: 'user', parts }
       ],
-      config: {
-        systemInstruction: "You are an expert teacher creating a quiz. Provide clear questions, 4 options, the correct answer index (0-3), and a brief explanation. If no specific number is given, generate 5 questions.",
-        tools: [{ urlContext: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              question: { type: Type.STRING, description: "The quiz question." },
-              options: { 
-                type: Type.ARRAY, 
-                items: { type: Type.STRING },
-                description: "Exactly 4 possible answers."
-              },
-              correctAnswerIndex: { type: Type.INTEGER, description: "The index (0 to 3) of the correct option." },
-              explanation: { type: Type.STRING, description: "A brief explanation of why the answer is correct." }
-            },
-            required: ["question", "options", "correctAnswerIndex", "explanation"]
-          }
-        }
-      }
+      config
     });
     
     if (response.text) {

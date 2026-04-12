@@ -26,6 +26,9 @@ import {
   Volume2,
   Timer as TimerIcon,
   Trophy,
+  Award,
+  Check,
+  Edit2,
   Globe,
   Clock,
   Coffee,
@@ -33,7 +36,6 @@ import {
   Square,
   Pause,
   RotateCcw,
-  Award,
   ChevronsLeft,
   Sun,
   Moon,
@@ -43,6 +45,7 @@ import {
   HelpCircle,
   Calendar,
   Copy,
+  Camera,
   ArrowRight,
   FileUp,
   Brain,
@@ -52,7 +55,9 @@ import {
   Type as TypeIcon,
   MicOff,
   Download,
-  Info
+  Info,
+  Telescope,
+  BookOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
@@ -156,7 +161,6 @@ const DEPARTMENTS: { id: Department; name: string; color: string }[] = [
   { id: 'Translator', name: 'Translator', color: 'bg-cyan-500' },
   { id: 'Timer', name: 'Study Timer', color: 'bg-orange-500' },
   { id: 'SmartVideos', name: 'Smart Videos', color: 'bg-red-500' },
-  { id: 'Projects', name: 'Projects', color: 'bg-violet-600' },
 ];
 
 const getDeptThemeClasses = (deptId: Department) => {
@@ -177,6 +181,56 @@ const getDeptThemeClasses = (deptId: Department) => {
   }
 };
 
+const PRESET_AVATARS = [
+  // Humans & Students (Original 8)
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Aneka',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Oliver',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Sophie',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Leo',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Mia',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Jack',
+  'https://api.dicebear.com/7.x/avataaars/svg?seed=Lily',
+  
+  // Superheroes
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=Spiderman',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=Hulk',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=Thor',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=Ironman',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=CaptainAmerica',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=BlackWidow',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=Batman',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=Superman',
+  
+  // Villains
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=Venom',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=Loki',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=Thanos',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=Joker',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=Ultron',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=Magneto',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=GreenGoblin',
+  'https://api.dicebear.com/7.x/adventurer/svg?seed=HarleyQuinn',
+  
+  // Animals
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Dog',
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Cat',
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Panda',
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Fox',
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Owl',
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Bunny',
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Lion',
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Tiger',
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Bear',
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Wolf',
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Elephant',
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Giraffe',
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Monkey',
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Koala',
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Deer',
+  'https://api.dicebear.com/7.x/big-ears/svg?seed=Raccoon',
+];
+
 const GeminiThinking = () => (
   <div className="flex items-center gap-3 p-4 bg-surge-purple/5 rounded-2xl border border-surge-purple/10 w-fit animate-pulse">
     <div className="relative">
@@ -188,6 +242,101 @@ const GeminiThinking = () => (
     <span className="text-xs font-bold text-surge-purple uppercase tracking-widest">Spyris is thinking...</span>
   </div>
 );
+
+const CameraModal = ({ isOpen, onClose, onCapture }: { isOpen: boolean, onClose: () => void, onCapture: (data: string, name: string) => void }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      startCamera();
+    } else {
+      stopCamera();
+    }
+    return () => stopCamera();
+  }, [isOpen]);
+
+  const startCamera = async () => {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'environment' }, 
+        audio: false 
+      });
+      setStream(s);
+      if (videoRef.current) {
+        videoRef.current.srcObject = s;
+      }
+    } catch (err) {
+      console.error("Camera error:", err);
+      setError("Не удалось получить доступ к камере. Пожалуйста, проверьте разрешения.");
+    }
+  };
+
+  const stopCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+  };
+
+  const capture = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0);
+        const dataUrl = canvas.toDataURL('image/jpeg');
+        const base64 = dataUrl.split(',')[1];
+        onCapture(base64, `camera_capture_${Date.now()}.jpg`);
+        onClose();
+      }
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center">
+      <div className="relative w-full h-full max-w-2xl mx-auto flex flex-col">
+        <div className="flex justify-between items-center p-4 text-white">
+          <h3 className="font-bold">Камера</h3>
+          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full">
+            <X size={24} />
+          </button>
+        </div>
+        
+        <div className="flex-1 relative bg-surge-bg overflow-hidden flex items-center justify-center">
+          {error ? (
+            <div className="text-red-500 p-8 text-center">{error}</div>
+          ) : (
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline 
+              className="w-full h-full object-cover"
+            />
+          )}
+        </div>
+
+        <div className="p-8 flex justify-center bg-black">
+          <button 
+            onClick={capture}
+            disabled={!!error}
+            className="w-20 h-20 rounded-full border-4 border-white flex items-center justify-center active:scale-90 transition-transform disabled:opacity-50"
+          >
+            <div className="w-16 h-16 rounded-full bg-white" />
+          </button>
+        </div>
+      </div>
+      <canvas ref={canvasRef} className="hidden" />
+    </div>
+  );
+};
 
 export default function App() {
   return (
@@ -203,6 +352,16 @@ function AppContent() {
   const [isAuthReady, setIsAuthReady] = useState(false);
 
   const [isThinkingMode, setIsThinkingMode] = useState(false);
+  const [isPlusMenuOpen, setIsPlusMenuOpen] = useState(false);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isAvatarPickerOpen, setIsAvatarPickerOpen] = useState(false);
+  const [isCameraForAvatar, setIsCameraForAvatar] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [tempName, setTempName] = useState('');
+  const [isDeepResearch, setIsDeepResearch] = useState(false);
+  const [isWebSearch, setIsWebSearch] = useState(false);
+  const [isStudyMode, setIsStudyMode] = useState(false);
 
   // Live API States
   const [liveSession, setLiveSession] = useState<any>(null);
@@ -287,6 +446,21 @@ function AppContent() {
     return () => unsubscribe();
   }, []);
 
+  // User Profile Listener
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsubscribe = onSnapshot(doc(db, 'users', user.uid), (snapshot) => {
+      if (snapshot.exists()) {
+        const profile = snapshot.data() as User;
+        setUser(profile);
+        setXp(profile.xp || 0);
+        setLevel(profile.level || 1);
+        setAchievements(profile.badges || []);
+      }
+    });
+    return () => unsubscribe();
+  }, [user?.uid]);
+
   // Firestore Sessions Listener
   useEffect(() => {
     if (!user) return;
@@ -297,7 +471,38 @@ function AppContent() {
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const sessionList = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as ChatSession));
-      setSessions(sessionList);
+      
+      setSessions(prev => {
+        // Merge logic to prevent local state being overwritten by stale server data
+        const merged = [...sessionList];
+        prev.forEach(local => {
+          const remoteIdx = merged.findIndex(r => r.id === local.id);
+          if (remoteIdx !== -1) {
+            const remote = merged[remoteIdx];
+            // If local has more messages, or the same number but local is newer/longer content
+            const localMsgCount = local.messages.length;
+            const remoteMsgCount = remote.messages.length;
+            
+            if (localMsgCount > remoteMsgCount) {
+              merged[remoteIdx] = local;
+            } else if (localMsgCount === remoteMsgCount && localMsgCount > 0) {
+              const localLastMsg = local.messages[localMsgCount - 1];
+              const remoteLastMsg = remote.messages[remoteMsgCount - 1];
+              
+              // If local content is longer and it's a model message (streaming)
+              if (localLastMsg.role === 'model' && localLastMsg.content.length > remoteLastMsg.content.length) {
+                merged[remoteIdx] = local;
+              } else if ((local.lastUpdated || 0) > (remote.lastUpdated || 0)) {
+                merged[remoteIdx] = local;
+              }
+            }
+          } else {
+            // New local session not yet in Firestore
+            merged.push(local);
+          }
+        });
+        return merged.sort((a, b) => (b.lastUpdated || 0) - (a.lastUpdated || 0));
+      });
     });
     return () => unsubscribe();
   }, [user]);
@@ -347,8 +552,9 @@ function AppContent() {
   // URL context for content generation
   const [contentUrl, setContentUrl] = useState('');
   const [showUrlInput, setShowUrlInput] = useState(false);
-  const [uploadedFile, setUploadedFile] = useState<{name: string, data: string, type: string} | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<{name: string, data: string, type: string}[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   
   // Timer States
   const [timerMode, setTimerMode] = useState<'study' | 'break'>('study');
@@ -407,31 +613,75 @@ function AppContent() {
     }
   }, [isTimerRunning]);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
 
-    // Gemini API has a strict 50MB limit for inline data. We limit to 20MB to be safe.
-    if (file.size > 20 * 1024 * 1024) {
-      showToast("Файл слишком большой. Максимальный размер - 20 МБ.", "error");
-      return;
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+    const docFiles = files.filter(f => !f.type.startsWith('image/'));
+
+    if (imageFiles.length > 0) {
+      // Create a synthetic event to reuse handleImageUpload
+      const syntheticEvent = { target: { files: imageFiles } } as unknown as React.ChangeEvent<HTMLInputElement>;
+      await handleImageUpload(syntheticEvent);
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64Data = event.target?.result as string;
-      setUploadedFile({
-        name: file.name,
-        data: base64Data.split(',')[1],
-        type: file.type
-      });
-      showToast(`File "${file.name}" uploaded successfully!`, 'success');
-    };
-    reader.readAsDataURL(file);
+    if (docFiles.length > 0) {
+      const newDocs: {name: string, data: string, type: string}[] = [];
+      
+      for (const file of docFiles) {
+        if (file.size > 100 * 1024 * 1024) {
+          showToast(`File ${file.name} is too large. Max size is 100MB.`, 'error');
+          continue;
+        }
+        const promise = new Promise<void>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const base64Data = event.target?.result as string;
+            
+            let mimeType = file.type;
+            if (!mimeType || mimeType === 'application/octet-stream') {
+              const extension = file.name.split('.').pop()?.toLowerCase();
+              const mimeMap: Record<string, string> = {
+                'pdf': 'application/pdf',
+                'txt': 'text/plain',
+                'md': 'text/markdown',
+                'markdown': 'text/markdown',
+                'js': 'text/javascript',
+                'py': 'text/x-python',
+                'html': 'text/html',
+                'css': 'text/css',
+                'json': 'application/json',
+                'csv': 'text/csv',
+                'xml': 'application/xml',
+                'rtf': 'text/rtf'
+              };
+              mimeType = mimeMap[extension || ''] || 'text/plain'; // Default to text/plain instead of octet-stream
+            }
+
+            newDocs.push({
+              name: file.name,
+              data: base64Data.split(',')[1],
+              type: mimeType
+            });
+            resolve();
+          };
+          reader.readAsDataURL(file);
+        });
+        await promise;
+      }
+      
+      setUploadedFiles(prev => [...prev, ...newDocs]);
+      showToast(`${docFiles.length} file(s) uploaded successfully!`, 'success');
+    }
   };
 
-  const clearFile = () => {
-    setUploadedFile(null);
+  const removeFile = (index: number) => {
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const clearAllFiles = () => {
+    setUploadedFiles([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -455,7 +705,7 @@ function AppContent() {
 
   const addXp = async (amount: number) => {
     const newXp = xp + amount;
-    const newLevel = Math.floor(newXp / 100) + 1;
+    const newLevel = Math.floor(newXp / 1000) + 1;
     setXp(newXp);
     if (newLevel > level) {
       setLevel(newLevel);
@@ -626,6 +876,7 @@ function AppContent() {
       if (e.code === 'auth/weak-password') message = "Password is too weak. Use at least 6 characters.";
       if (e.code === 'auth/user-not-found' || e.code === 'auth/wrong-password') message = "Invalid email or password.";
       if (e.code === 'auth/network-request-failed') message = "Network error. Please check your connection.";
+      if (e.code === 'auth/operation-not-allowed') message = "This sign-in method is not enabled in the Firebase Console. Please enable 'Email/Password' and 'Google' in the Authentication > Sign-in method tab.";
       setAuthError(message);
     }
   };
@@ -636,7 +887,11 @@ function AppContent() {
       await loginWithGoogle();
     } catch (e: any) {
       console.error("Google login error:", e);
-      setAuthError(e.message || "Google login failed");
+      let message = e.message || "Google login failed";
+      if (e.code === 'auth/operation-not-allowed') {
+        message = "Google sign-in is not enabled in the Firebase Console. Please enable it in the Authentication > Sign-in method tab.";
+      }
+      setAuthError(message);
     }
   };
 
@@ -676,7 +931,7 @@ function AppContent() {
   const startLiveSession = async () => {
     try {
       const { GoogleGenAI, Modality } = await import('@google/genai');
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: (import.meta as any).env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY });
       
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       setAudioContext(ctx);
@@ -799,7 +1054,7 @@ function AppContent() {
       return;
     }
 
-    const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
       showToast("Ваш браузер не поддерживает голосовой ввод.", "error");
       return;
@@ -885,9 +1140,9 @@ function AppContent() {
     const targetSessionId = overrideSessionId || currentSessionId;
     const currentAttachedImages = [...attachedImages];
     const currentAttachedLinks = [...attachedLinks];
-    const currentUploadedFile = uploadedFile ? { ...uploadedFile } : null;
+    const currentUploadedFiles = [...uploadedFiles];
     
-    if ((!messageText.trim() && currentAttachedImages.length === 0 && currentAttachedLinks.length === 0 && !sourceUrl && !currentUploadedFile) || !targetSessionId || isLoading) return;
+    if ((!messageText.trim() && currentAttachedImages.length === 0 && currentAttachedLinks.length === 0 && !sourceUrl && currentUploadedFiles.length === 0) || !targetSessionId || isLoading) return;
 
     let finalContent = messageText;
     let effectiveSourceUrl = sourceUrl;
@@ -903,8 +1158,9 @@ function AppContent() {
     if (effectiveSourceUrl && effectiveSourceUrl !== currentAttachedLinks[0]) {
       finalContent += `\n\n[Source URL: ${effectiveSourceUrl}]`;
     }
-    if (currentUploadedFile) {
-      finalContent += `\n\n[Attached File: ${currentUploadedFile.name}]`;
+    if (currentUploadedFiles.length > 0) {
+      const fileNames = currentUploadedFiles.map(f => f.name).join(', ');
+      finalContent += `\n\n[Attached Files: ${fileNames}]`;
     }
 
     const userMessage: Message = {
@@ -919,7 +1175,7 @@ function AppContent() {
     setInput('');
     setAttachedImages([]);
     setAttachedLinks([]);
-    setUploadedFile(null);
+    setUploadedFiles([]);
     addXp(10);
 
     // 1. Update state with user message
@@ -929,21 +1185,27 @@ function AppContent() {
     const sessionType = overrideSessionType || sessions.find(s => s.id === targetSessionId)?.type || 'chat';
     const department = sessions.find(s => s.id === targetSessionId)?.department || 'General';
 
+    let updatedSession: ChatSession | undefined;
     setSessions(prev => {
       const updated = prev.map(s => {
         if (s.id === targetSessionId) {
-          const updatedSession = {
+          updatedSession = {
             ...s,
             messages: [...s.messages, userMessage],
-            title: s.messages.length === 0 ? (messageText ? messageText.slice(0, 30) + (messageText.length > 30 ? '...' : '') : 'New Chat') : s.title
+            title: s.messages.length === 0 ? (messageText ? messageText.slice(0, 30) + (messageText.length > 30 ? '...' : '') : 'New Chat') : s.title,
+            lastUpdated: Date.now()
           };
-          targetSession = updatedSession;
           return updatedSession;
         }
         return s;
       });
       return updated;
     });
+
+    // Sync to Firestore outside of setSessions
+    if (updatedSession) {
+      syncSessions([updatedSession], targetSessionId);
+    }
 
     // 2. Call AI
     try {
@@ -965,9 +1227,10 @@ function AppContent() {
       }) || [];
 
       if (sessionType === 'flashcards') {
-        const flashcards = await generateFlashcards(userMessage.content, history, effectiveSourceUrl, currentUploadedFile);
+        const flashcards = await generateFlashcards(userMessage.content, history, effectiveSourceUrl, currentUploadedFiles);
+        let finalSessions: ChatSession[] = [];
         setSessions(prev => {
-          const finalSessions = prev.map(s => {
+          finalSessions = prev.map(s => {
             if (s.id === targetSessionId) {
               const surgeMessage: Message = {
                 id: crypto.randomUUID(),
@@ -976,17 +1239,20 @@ function AppContent() {
                 timestamp: Date.now(),
                 flashcards
               };
-              return { ...s, messages: [...s.messages, surgeMessage] };
+              return { ...s, messages: [...s.messages, surgeMessage], lastUpdated: Date.now() };
             }
             return s;
           });
-          syncSessions(finalSessions, targetSessionId);
           return finalSessions;
         });
+        if (finalSessions.length > 0) {
+          syncSessions(finalSessions, targetSessionId);
+        }
       } else if (sessionType === 'quiz') {
-        const quiz = await generateQuiz(userMessage.content, history, effectiveSourceUrl, currentUploadedFile);
+        const quiz = await generateQuiz(userMessage.content, history, effectiveSourceUrl, currentUploadedFiles);
+        let finalSessions: ChatSession[] = [];
         setSessions(prev => {
-          const finalSessions = prev.map(s => {
+          finalSessions = prev.map(s => {
             if (s.id === targetSessionId) {
               const surgeMessage: Message = {
                 id: crypto.randomUUID(),
@@ -995,13 +1261,15 @@ function AppContent() {
                 timestamp: Date.now(),
                 quiz
               };
-              return { ...s, messages: [...s.messages, surgeMessage] };
+              return { ...s, messages: [...s.messages, surgeMessage], lastUpdated: Date.now() };
             }
             return s;
           });
-          syncSessions(finalSessions, targetSessionId);
           return finalSessions;
         });
+        if (finalSessions.length > 0) {
+          syncSessions(finalSessions, targetSessionId);
+        }
       } else {
         const responseStream = await chatWithSpyrisStream(
           userMessage.content, 
@@ -1009,8 +1277,12 @@ function AppContent() {
           department, 
           currentAttachedImages.length > 0 ? currentAttachedImages.map(img => ({ data: img.data, mimeType: 'image/jpeg' })) : undefined, 
           effectiveSourceUrl,
-          currentUploadedFile,
-          isThinkingMode
+          currentUploadedFiles.length > 0 ? currentUploadedFiles : undefined,
+          isThinkingMode,
+          false, // isLite
+          isDeepResearch,
+          isWebSearch,
+          isStudyMode
         );
         
         const surgeMessageId = crypto.randomUUID();
@@ -1045,13 +1317,17 @@ function AppContent() {
           }
           setSessions(prev => prev.map(s => s.id === targetSessionId ? {
             ...s,
-            messages: s.messages.map(m => m.id === surgeMessageId ? { ...m, content: currentContent, groundingChunks: currentGroundingChunks } : m)
+            messages: s.messages.map(m => m.id === surgeMessageId ? { ...m, content: currentContent, groundingChunks: currentGroundingChunks } : m),
+            lastUpdated: Date.now()
           } : s));
         }
 
         // Sync after stream finishes
         setSessions(prev => {
-          syncSessions(prev, targetSessionId);
+          const sessionToSync = prev.find(s => s.id === targetSessionId);
+          if (sessionToSync) {
+            syncSessions(prev, targetSessionId);
+          }
           return prev;
         });
       }
@@ -1066,8 +1342,9 @@ function AppContent() {
       }
 
       // Add error message
+      let errorSessions: ChatSession[] = [];
       setSessions(prev => {
-        const finalSessions = prev.map(s => {
+        errorSessions = prev.map(s => {
           if (s.id === targetSessionId) {
             const errorMessage: Message = {
               id: crypto.randomUUID(),
@@ -1077,14 +1354,17 @@ function AppContent() {
             };
             return {
               ...s,
-              messages: [...s.messages, errorMessage]
+              messages: [...s.messages, errorMessage],
+              lastUpdated: Date.now()
             };
           }
           return s;
         });
-        syncSessions(finalSessions, targetSessionId);
-        return finalSessions;
+        return errorSessions;
       });
+      if (errorSessions.length > 0) {
+        syncSessions(errorSessions, targetSessionId);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -1098,21 +1378,13 @@ function AppContent() {
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    if (!files.length || !currentSessionId) return;
-
-    const remainingSlots = 10 - attachedImages.length;
-    const filesToProcess = files.slice(0, remainingSlots);
-
-    if (filesToProcess.length === 0) {
-      showToast("You can only attach up to 10 images.", 'error');
-      return;
-    }
+    if (!files.length) return;
 
     const newImages: { data: string, mimeType: string, name: string, url: string }[] = [];
 
-    for (const file of filesToProcess) {
-      if (file.size > 5 * 1024 * 1024) {
-        showToast(`Изображение "${file.name}" слишком большое (макс. 5 МБ).`, "error");
+    for (const file of files) {
+      if (file.size > 25 * 1024 * 1024) {
+        showToast(`Image ${file.name} is too large. Max size is 25MB.`, 'error');
         continue;
       }
       const reader = new FileReader();
@@ -1137,6 +1409,9 @@ function AppContent() {
     
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+    if (cameraInputRef.current) {
+      cameraInputRef.current.value = '';
     }
   };
 
@@ -1342,8 +1617,245 @@ function AppContent() {
     );
   }
 
+  const handleCameraCapture = (data: string, name: string) => {
+    if (isCameraForAvatar) {
+      const photoURL = `data:image/jpeg;base64,${data}`;
+      if (user) {
+        import('./firebase').then(({ updateUserProfile }) => {
+          updateUserProfile(user.uid, { photoURL });
+        });
+      }
+      setIsCameraForAvatar(false);
+      setIsCameraOpen(false);
+      showToast("Аватар обновлен!", "success");
+      return;
+    }
+    setAttachedImages(prev => [...prev, {
+      data,
+      mimeType: 'image/jpeg',
+      name,
+      url: `data:image/jpeg;base64,${data}`
+    }]);
+    showToast("Фото добавлено!", "success");
+  };
+
+  const handleUpdateName = () => {
+    if (!tempName.trim() || !user) return;
+    import('./firebase').then(({ updateUserProfile }) => {
+      updateUserProfile(user.uid, { name: tempName.trim() });
+      setEditingName(false);
+      showToast("Имя обновлено!", "success");
+    });
+  };
+
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const photoURL = event.target?.result as string;
+      import('./firebase').then(({ updateUserProfile }) => {
+        updateUserProfile(user.uid, { photoURL });
+        showToast("Аватар обновлен!", "success");
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const selectPresetAvatar = (url: string) => {
+    if (!user) return;
+    import('./firebase').then(({ updateUserProfile }) => {
+      updateUserProfile(user.uid, { photoURL: url });
+      setIsAvatarPickerOpen(false);
+      showToast("Аватар обновлен!", "success");
+    });
+  };
+
   return (
     <div className="h-screen flex flex-col bg-surge-bg text-surge-ink font-sans">
+      <CameraModal 
+        isOpen={isCameraOpen} 
+        onClose={() => {
+          setIsCameraOpen(false);
+          setIsCameraForAvatar(false);
+        }} 
+        onCapture={handleCameraCapture} 
+      />
+      
+      {/* Profile Modal */}
+      <AnimatePresence>
+        {isProfileModalOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+            onClick={() => setIsProfileModalOpen(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="w-full max-w-lg bg-surge-card border border-surge-border rounded-[2.5rem] shadow-2xl overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="relative h-32 bg-gradient-to-r from-surge-purple to-violet-600">
+                <button 
+                  onClick={() => setIsProfileModalOpen(false)}
+                  className="absolute top-4 right-4 p-2 bg-black/20 hover:bg-black/40 text-white rounded-full transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="px-8 pb-8 -mt-12 relative">
+                <div className="flex flex-col items-center text-center">
+                  <div className="relative group">
+                    <div className="w-24 h-24 rounded-3xl bg-surge-card border-4 border-surge-card shadow-xl overflow-hidden flex items-center justify-center text-3xl font-bold text-surge-purple bg-surge-purple/10">
+                      {user?.photoURL ? (
+                        <img src={user.photoURL} alt={user.name} className="w-full h-full object-cover" />
+                      ) : (
+                        user?.name?.slice(0, 2).toUpperCase() || '??'
+                      )}
+                    </div>
+                    <button 
+                      onClick={() => setIsAvatarPickerOpen(true)}
+                      className="absolute bottom-0 right-0 p-2 bg-surge-purple text-white rounded-xl shadow-lg hover:scale-110 transition-transform"
+                    >
+                      <Camera size={16} />
+                    </button>
+                  </div>
+                  
+                  <div className="mt-4 w-full">
+                    {editingName ? (
+                      <div className="flex items-center gap-2 justify-center">
+                        <input 
+                          autoFocus
+                          value={tempName}
+                          onChange={e => setTempName(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && handleUpdateName()}
+                          className="bg-surge-bg border border-surge-purple px-4 py-2 rounded-xl text-center font-bold focus:outline-none"
+                        />
+                        <button onClick={handleUpdateName} className="p-2 bg-emerald-500 text-white rounded-xl"><Check size={16} /></button>
+                        <button onClick={() => setEditingName(false)} className="p-2 bg-rose-500 text-white rounded-xl"><X size={16} /></button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 justify-center group">
+                        <h2 className="text-2xl font-black text-surge-ink tracking-tight">{user?.name || 'Guest'}</h2>
+                        <button 
+                          onClick={() => { setTempName(user?.name || ''); setEditingName(true); }}
+                          className="p-1.5 text-surge-ink/20 hover:text-surge-purple opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                      </div>
+                    )}
+                    <p className="text-sm text-surge-ink/40 font-medium">{user?.email}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4 mt-8">
+                  <div className="bg-surge-ink/5 p-4 rounded-2xl text-center border border-surge-ink/5">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-surge-purple mb-1">Level</p>
+                    <p className="text-xl font-black text-surge-ink">{user?.level || 1}</p>
+                  </div>
+                  <div className="bg-surge-ink/5 p-4 rounded-2xl text-center border border-surge-ink/5">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-surge-purple mb-1">XP</p>
+                    <p className="text-xl font-black text-surge-ink">{user?.xp || 0}</p>
+                  </div>
+                  <div className="bg-surge-ink/5 p-4 rounded-2xl text-center border border-surge-ink/5">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-surge-purple mb-1">Tests</p>
+                    <p className="text-xl font-black text-surge-ink">{user?.testsCompleted || 0}</p>
+                  </div>
+                </div>
+
+                <div className="mt-8">
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-surge-ink/30 mb-4 flex items-center gap-2">
+                    <Trophy size={14} className="text-yellow-500" />
+                    Achievements
+                  </h4>
+                  <div className="flex flex-wrap gap-3">
+                    {user?.badges && user.badges.length > 0 ? (
+                      user.badges.map((badge, idx) => (
+                        <div key={idx} className="px-4 py-2 bg-yellow-400/10 border border-yellow-400/30 rounded-xl text-yellow-600 text-xs font-bold flex items-center gap-2">
+                          <Award size={14} />
+                          {badge}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-surge-ink/20 italic">No achievements yet. Complete quizzes to earn badges!</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Avatar Picker Modal */}
+      <AnimatePresence>
+        {isAvatarPickerOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            onClick={() => setIsAvatarPickerOpen(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="w-full max-w-md bg-surge-card border border-surge-border rounded-[2.5rem] shadow-2xl p-8"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center mb-8">
+                <h3 className="text-xl font-black text-surge-ink">Выберите аватар</h3>
+                <button onClick={() => setIsAvatarPickerOpen(false)} className="p-2 hover:bg-surge-ink/5 rounded-full">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+                <div className="grid grid-cols-2 gap-4 mb-8">
+                  <button 
+                    onClick={() => {
+                      setIsCameraForAvatar(true);
+                      setIsCameraOpen(true);
+                      setIsAvatarPickerOpen(false);
+                    }}
+                    className="flex flex-col items-center gap-3 p-6 bg-surge-purple/10 border-2 border-surge-purple/20 rounded-3xl hover:bg-surge-purple/20 transition-all group"
+                  >
+                    <Camera size={32} className="text-surge-purple group-hover:scale-110 transition-transform" />
+                    <span className="text-sm font-bold text-surge-purple">Камера</span>
+                  </button>
+                  <label className="flex flex-col items-center gap-3 p-6 bg-blue-500/10 border-2 border-blue-500/20 rounded-3xl hover:bg-blue-500/20 transition-all group cursor-pointer">
+                    <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                    <ImageIcon size={32} className="text-blue-500 group-hover:scale-110 transition-transform" />
+                    <span className="text-sm font-bold text-blue-500">Галерея</span>
+                  </label>
+                </div>
+
+                <h4 className="text-xs font-bold uppercase tracking-widest text-surge-ink/30 mb-4">Коллекция Spyris</h4>
+                <div className="grid grid-cols-4 gap-4 pb-4">
+                  {PRESET_AVATARS.map((url, idx) => (
+                    <button 
+                      key={idx}
+                      onClick={() => selectPresetAvatar(url)}
+                      className="w-full aspect-square rounded-2xl overflow-hidden border-2 border-transparent hover:border-surge-purple transition-all hover:scale-105"
+                    >
+                      <img src={url} alt={`Avatar ${idx}`} className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {toast && (
           <motion.div
@@ -1404,6 +1916,7 @@ function AppContent() {
                 <Layers size={18} />
               </button>
             </div>
+
 
             <div className="px-4 mb-4">
               <div className="relative group">
@@ -1510,15 +2023,25 @@ function AppContent() {
 
             <div className="p-4 border-t border-surge-border bg-surge-ink/10">
               <div 
-                onClick={() => setShowSubscription(true)}
+                onClick={() => setIsProfileModalOpen(true)}
                 className="flex items-center gap-3 p-3 rounded-xl hover:bg-surge-ink/5 transition-colors cursor-pointer group relative"
               >
-                <div className="w-10 h-10 rounded-xl bg-surge-purple/20 flex items-center justify-center text-surge-purple font-bold text-sm shadow-inner border border-surge-purple/30">
-                  {user?.name?.slice(0, 2).toUpperCase() || '??'}
+                <div className="w-10 h-10 rounded-xl bg-surge-purple/20 flex items-center justify-center text-surge-purple font-bold text-sm shadow-inner border border-surge-purple/30 overflow-hidden">
+                  {user?.photoURL ? (
+                    <img src={user.photoURL} alt={user.name} className="w-full h-full object-cover" />
+                  ) : (
+                    user?.name?.slice(0, 2).toUpperCase() || '??'
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-surge-ink truncate">{user?.name || 'Guest'}</p>
-                  <p className="text-[10px] text-surge-purple font-bold uppercase tracking-tighter">Pro Student</p>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setShowSubscription(true); }}
+                    className="flex items-center gap-1 text-[9px] text-surge-purple font-bold uppercase tracking-tighter hover:text-amber-500 transition-colors"
+                  >
+                    <Zap size={8} className="fill-current" />
+                    <span>Upgrade Plan</span>
+                  </button>
                 </div>
                 <div className="flex items-center gap-1">
                   <button 
@@ -1563,8 +2086,17 @@ function AppContent() {
           type="file"
           ref={fileInputRef}
           onChange={handleFileUpload}
-          accept=".pdf,.txt,.doc,.docx,.md"
+          accept=".pdf,.txt,.doc,.docx,.md,image/*"
+          multiple
           className="hidden"
+        />
+        <input 
+          type="file" 
+          accept="image/*" 
+          capture="environment" 
+          ref={cameraInputRef} 
+          className="hidden" 
+          onChange={handleImageUpload} 
         />
         {/* Mobile Header */}
         <div className="md:hidden flex items-center justify-between p-4 border-b border-surge-border bg-surge-card">
@@ -1729,7 +2261,7 @@ function AppContent() {
                         </button>
                       </div>
                       <div className="bg-surge-ink/5 p-8 rounded-[2rem] border border-surge-ink/10 shadow-inner max-h-[500px] overflow-y-auto custom-scrollbar">
-                        <div className="prose prose-invert prose-sm max-w-none text-surge-ink/80 leading-relaxed">
+                        <div className="markdown-body overflow-x-auto">
                           <Markdown>{marksAnalysisResult}</Markdown>
                         </div>
                       </div>
@@ -1783,13 +2315,13 @@ function AppContent() {
                       <div className="flex items-center justify-between mb-3 ml-2">
                         <label className="block text-[10px] font-bold text-surge-ink/30 uppercase tracking-widest">Topic</label>
                         <div className="flex items-center gap-4">
-                          {uploadedFile ? (
+                          {uploadedFiles.length > 0 ? (
                             <button 
-                              onClick={clearFile}
+                              onClick={clearAllFiles}
                               className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-red-500 hover:text-red-600 transition-colors"
                             >
                               <X size={12} />
-                              Clear File
+                              Clear Files
                             </button>
                           ) : (
                             <button 
@@ -1886,13 +2418,13 @@ function AppContent() {
                         <div className="flex items-center justify-between mb-2 ml-1">
                           <label className="block text-[10px] font-bold text-surge-ink/30 uppercase tracking-widest">Student Grade/Class</label>
                         <div className="flex items-center gap-4">
-                          {uploadedFile ? (
+                          {uploadedFiles.length > 0 ? (
                             <button 
-                              onClick={clearFile}
+                              onClick={clearAllFiles}
                               className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-red-500 hover:text-red-600 transition-colors"
                             >
                               <X size={12} />
-                              Clear File
+                              Clear Files
                             </button>
                           ) : (
                             <button 
@@ -2070,7 +2602,7 @@ function AppContent() {
                         </div>
                       </div>
                       <div className="bg-surge-ink/5 p-8 rounded-[2rem] border border-surge-ink/10 shadow-inner max-h-[500px] overflow-y-auto custom-scrollbar">
-                        <div className="prose prose-invert prose-sm max-w-none text-surge-ink/80 leading-relaxed">
+                        <div className="markdown-body overflow-x-auto">
                           <Markdown>{planResult}</Markdown>
                         </div>
                       </div>
@@ -2098,13 +2630,13 @@ function AppContent() {
                       <div className="flex items-center justify-between mb-3 ml-1">
                         <label className="block text-[10px] font-bold text-surge-ink/30 uppercase tracking-widest">Subject</label>
                         <div className="flex items-center gap-4">
-                          {uploadedFile ? (
+                          {uploadedFiles.length > 0 ? (
                             <button 
-                              onClick={clearFile}
+                              onClick={clearAllFiles}
                               className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest text-red-500 hover:text-red-600 transition-colors"
                             >
                               <X size={12} />
-                              Clear File
+                              Clear Files
                             </button>
                           ) : (
                             <button 
@@ -3198,7 +3730,16 @@ function AppContent() {
                     return (
                       <div key={message.id} className="mb-12">
                         <h3 className="text-2xl font-bold text-surge-ink mb-6 text-center capitalize">{topic}</h3>
-                        <QuizViewer quiz={message.quiz!} />
+                        <QuizViewer 
+                          quiz={message.quiz!} 
+                          onComplete={() => {
+                            if (user) {
+                              import('./firebase').then(({ updateTestsCompleted }) => {
+                                updateTestsCompleted(user.uid);
+                              });
+                            }
+                          }}
+                        />
                       </div>
                     );
                   })}
@@ -3245,15 +3786,17 @@ function AppContent() {
                           {message.role === 'model' ? (
                             <div className="markdown-body">
                               {message.content && (
-                                <Markdown 
-                                  remarkPlugins={[remarkMath, remarkGfm]} 
-                                  rehypePlugins={[rehypeKatex]}
-                                  components={{
-                                    a: ({node, ...props}) => <a {...props} target="_blank" rel="noopener noreferrer" className="text-surge-purple hover:underline" />
-                                  }}
-                                >
-                                  {message.content}
-                                </Markdown>
+                          <div className="overflow-x-auto">
+                            <Markdown 
+                              remarkPlugins={[remarkMath, remarkGfm]} 
+                              rehypePlugins={[rehypeKatex]}
+                              components={{
+                                a: ({node, ...props}) => <a {...props} target="_blank" rel="noopener noreferrer" className="text-surge-purple hover:underline" />
+                              }}
+                            >
+                              {message.content}
+                            </Markdown>
+                          </div>
                               )}
                               {message.groundingChunks && message.groundingChunks.length > 0 && (
                                 <div className="mt-4 pt-4 border-t border-surge-ink/10">
@@ -3300,15 +3843,17 @@ function AppContent() {
                           ) : (
                             <div className="markdown-body user-markdown">
                               {message.content && (
-                                <Markdown 
-                                  remarkPlugins={[remarkMath, remarkGfm]} 
-                                  rehypePlugins={[rehypeKatex]}
-                                  components={{
-                                    a: ({node, ...props}) => <a {...props} target="_blank" rel="noopener noreferrer" className="underline" />
-                                  }}
-                                >
-                                  {message.content}
-                                </Markdown>
+                          <div className="overflow-x-auto">
+                            <Markdown 
+                              remarkPlugins={[remarkMath, remarkGfm]} 
+                              rehypePlugins={[rehypeKatex]}
+                              components={{
+                                a: ({node, ...props}) => <a {...props} target="_blank" rel="noopener noreferrer" className="underline" />
+                              }}
+                            >
+                              {message.content}
+                            </Markdown>
+                          </div>
                               )}
                             </div>
                           )}
@@ -3364,72 +3909,105 @@ function AppContent() {
                   </div>
                 )}
                 <div className="flex items-end gap-3 bg-surge-card border border-surge-border rounded-[2rem] p-3 focus-within:ring-4 focus-within:ring-surge-purple/10 focus-within:border-surge-purple transition-all shadow-2xl">
-                  <div className="flex flex-col gap-2 pl-2 pb-2">
+                  <div className="relative pl-2 pb-2 flex items-end">
                     <button
                       type="button"
-                      onClick={() => setIsThinkingMode(!isThinkingMode)}
-                      className={cn(
-                        "p-2 rounded-xl transition-all flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest",
-                        isThinkingMode ? "bg-surge-purple text-white shadow-lg shadow-surge-purple/20" : "bg-surge-ink/5 text-surge-ink/40 hover:bg-surge-ink/10"
-                      )}
-                      title="Toggle Thinking Mode"
+                      onClick={() => setIsPlusMenuOpen(!isPlusMenuOpen)}
+                      className="p-3 bg-surge-bg hover:bg-surge-purple/10 rounded-full text-white/50 hover:text-surge-purple transition-all group"
+                      title="Add attachment or feature"
                     >
-                      <Brain size={16} />
-                      {isThinkingMode && <span>Thinking</span>}
+                      <Plus size={24} className={cn("transition-transform", isPlusMenuOpen && "rotate-45")} />
                     </button>
+
+                    <AnimatePresence>
+                      {isPlusMenuOpen && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                          className="absolute bottom-full left-0 mb-4 w-72 bg-surge-card border border-surge-border rounded-3xl shadow-2xl overflow-hidden z-50 flex flex-col py-3"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCameraOpen(true);
+                              setIsPlusMenuOpen(false);
+                            }}
+                            className="flex items-center gap-4 px-5 py-3 hover:bg-surge-ink/5 text-left transition-colors group"
+                          >
+                            <div className="p-2 bg-surge-ink/5 rounded-xl group-hover:bg-surge-ink/10 transition-colors">
+                              <Camera size={18} className="text-surge-ink/60" />
+                            </div>
+                            <span className="text-sm font-bold text-surge-ink">Сделать фото</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              fileInputRef.current?.click();
+                              setIsPlusMenuOpen(false);
+                            }}
+                            className="flex items-center gap-4 px-5 py-3 hover:bg-surge-ink/5 text-left transition-colors group"
+                          >
+                            <div className="p-2 bg-surge-ink/5 rounded-xl group-hover:bg-surge-ink/10 transition-colors">
+                              <Paperclip size={18} className="text-surge-ink/60" />
+                            </div>
+                            <span className="text-sm font-bold text-surge-ink">Добавить фото и файлы</span>
+                          </button>
+                          
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsLinkModalOpen(true);
+                              setIsPlusMenuOpen(false);
+                            }}
+                            className="flex items-center gap-4 px-5 py-3 hover:bg-surge-ink/5 text-left transition-colors group"
+                          >
+                            <div className="p-2 bg-surge-ink/5 rounded-xl group-hover:bg-surge-ink/10 transition-colors">
+                              <Link size={18} className="text-surge-ink/60" />
+                            </div>
+                            <span className="text-sm font-bold text-surge-ink">Добавить ссылку</span>
+                          </button>
+                          
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsThinkingMode(!isThinkingMode);
+                              setIsPlusMenuOpen(false);
+                            }}
+                            className="flex items-center gap-4 px-5 py-3 hover:bg-surge-ink/5 text-left transition-colors group"
+                          >
+                            <div className={cn("p-2 rounded-xl transition-colors", isThinkingMode ? "bg-surge-purple/20" : "bg-surge-ink/5 group-hover:bg-surge-ink/10")}>
+                              <Brain size={18} className={isThinkingMode ? "text-surge-purple" : "text-surge-ink/60"} />
+                            </div>
+                            <span className="text-sm font-bold text-surge-ink">Думаю</span>
+                            {isThinkingMode && <CheckCircle2 size={16} className="ml-auto text-surge-purple" />}
+                          </button>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
-                  <button 
-                    type="button"
-                    onClick={() => setIsLinkModalOpen(true)}
-                    className="p-4 bg-surge-bg hover:bg-surge-purple/10 rounded-2xl text-white/30 hover:text-surge-purple transition-all group"
-                    title="Attach a link"
-                  >
-                    <Link size={24} className="transition-transform group-hover:scale-110" />
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className={cn(
-                      "p-4 bg-surge-bg hover:bg-surge-purple/10 rounded-2xl transition-all group",
-                      uploadedFile ? "text-emerald-500" : "text-white/30 hover:text-surge-purple"
-                    )}
-                    title="Upload file (PDF, TXT, DOC)"
-                  >
-                    <FileUp size={24} className="transition-transform group-hover:scale-110" />
-                  </button>
-                  <button 
-                    type="button"
-                    onClick={() => {
-                      // Trigger image upload
-                      const imgInput = document.createElement('input');
-                      imgInput.type = 'file';
-                      imgInput.accept = 'image/*';
-                      imgInput.multiple = true;
-                      imgInput.onchange = (e: any) => handleImageUpload(e);
-                      imgInput.click();
-                    }}
-                    className="p-4 bg-surge-bg hover:bg-surge-purple/10 rounded-2xl text-white/30 hover:text-surge-purple transition-all group"
-                    title="Upload image for conspect (max 10)"
-                    disabled={attachedImages.length >= 10}
-                  >
-                    <ImageIcon size={24} className={cn("transition-transform", attachedImages.length < 10 && "group-hover:scale-110")} />
-                  </button>
                   
                   <div className="flex-1 flex flex-col">
-                    {uploadedFile && (
-                      <div className="mb-2 flex flex-wrap items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl w-fit">
-                        <div className="flex items-center gap-2">
-                          <FileText size={14} className="text-emerald-500" />
-                          <span className="text-[10px] font-bold text-emerald-600 truncate max-w-[150px]">{uploadedFile.name}</span>
-                          <button onClick={clearFile} className="text-emerald-500 hover:text-red-500 transition-colors">
-                            <X size={14} />
-                          </button>
-                        </div>
-                        <div className="h-4 w-[1px] bg-emerald-500/20 mx-1" />
-                        <div className="flex gap-1">
+                    {uploadedFiles.length > 0 && (
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        {uploadedFiles.map((file, index) => (
+                          <div key={index} className="flex flex-wrap items-center gap-2 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl w-fit">
+                            <div className="flex items-center gap-2">
+                              <FileText size={14} className="text-emerald-500" />
+                              <span className="text-[10px] font-bold text-emerald-600 truncate max-w-[150px]">{file.name}</span>
+                              <button onClick={() => removeFile(index)} className="text-emerald-500 hover:text-red-500 transition-colors">
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="flex gap-1 ml-2">
                           <button 
                             onClick={() => {
-                              createNewSession('flashcards', 'Flashcards', `Generate flashcards based on the uploaded file: ${uploadedFile.name}`);
+                              const fileNames = uploadedFiles.map(f => f.name).join(', ');
+                              createNewSession('flashcards', 'Flashcards', `Generate flashcards based on the uploaded files: ${fileNames}`);
+                              clearAllFiles();
                             }}
                             className="text-[9px] font-black uppercase tracking-tighter bg-blue-500 text-white px-2 py-1 rounded-md hover:bg-blue-600 transition-all"
                           >
@@ -3437,7 +4015,9 @@ function AppContent() {
                           </button>
                           <button 
                             onClick={() => {
-                              createNewSession('quiz', 'Quizzes', `Generate a quiz based on the uploaded file: ${uploadedFile.name}`);
+                              const fileNames = uploadedFiles.map(f => f.name).join(', ');
+                              createNewSession('quiz', 'Quizzes', `Generate a quiz based on the uploaded files: ${fileNames}`);
+                              clearAllFiles();
                             }}
                             className="text-[9px] font-black uppercase tracking-tighter bg-pink-500 text-white px-2 py-1 rounded-md hover:bg-pink-600 transition-all"
                           >
@@ -3445,7 +4025,9 @@ function AppContent() {
                           </button>
                           <button 
                             onClick={() => {
-                              createNewSession('chat', 'Test', `Generate a test based on the uploaded file: ${uploadedFile.name}`);
+                              const fileNames = uploadedFiles.map(f => f.name).join(', ');
+                              createNewSession('chat', 'Test', `Generate a test based on the uploaded files: ${fileNames}`);
+                              clearAllFiles();
                             }}
                             className="text-[9px] font-black uppercase tracking-tighter bg-orange-500 text-white px-2 py-1 rounded-md hover:bg-orange-600 transition-all"
                           >
@@ -3478,7 +4060,7 @@ function AppContent() {
                             handleSendMessage();
                           }
                         }}
-                        placeholder={isVoiceTyping ? "Говорите..." : uploadedFile ? `Ask about ${uploadedFile.name}...` : 
+                        placeholder={isVoiceTyping ? "Говорите..." : uploadedFiles.length > 0 ? `Ask about ${uploadedFiles.length} file(s)...` : 
                                      currentSession?.department === 'Marks' ? "Enter your marks (e.g. Algebra: 3, Science: 4)..." : 
                                      currentSession?.department === 'Flashcards' ? "Enter a new topic to generate more flashcards..." :
                                      currentSession?.department === 'Quizzes' ? "Enter a new topic to generate another quiz..." :
@@ -3490,10 +4072,10 @@ function AppContent() {
                   
                   <button 
                     type="submit"
-                    disabled={(!input.trim() && attachedImages.length === 0 && !uploadedFile) || isLoading}
+                    disabled={(!input.trim() && attachedImages.length === 0 && uploadedFiles.length === 0) || isLoading}
                     className={cn(
                       "p-4 rounded-2xl transition-all shadow-xl",
-                      (input.trim() || attachedImages.length > 0 || uploadedFile) && !isLoading 
+                      (input.trim() || attachedImages.length > 0 || uploadedFiles.length > 0) && !isLoading 
                         ? "bg-surge-purple text-white shadow-surge-purple/30 hover:scale-105 active:scale-95" 
                         : "bg-surge-border text-surge-ink/10 cursor-not-allowed"
                     )}
